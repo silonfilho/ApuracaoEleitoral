@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apuração 2º Turno 2026</title>
+    <!-- Fontes do Google -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js para o Gráfico -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Leaflet CSS & JS para o Mapa Cartográfico -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0b0e;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .main-container {
+            width: 100%;
+            max-width: 950px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .wrapper-side-by-side {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: stretch;
+            width: 100%;
+        }
+
+        .dashboard-card {
+            background-color: #121216;
+            border: 1px solid #22222b;
+            border-radius: 20px;
+            padding: 24px;
+            flex: 1;
+            min-width: 320px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* BARRA DE DESTAQUE DINÂMICA DE ESTADO */
+        .state-banner-highlight {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 10px;
+            background-color: #1a1a22;
+            border: 1px solid #2c2c3a;
+            margin-bottom: 16px;
+            transition: all 0.4s ease;
+        }
+
+        .state-banner-highlight.leader-lula {
+            background-color: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+
+        .state-banner-highlight.leader-flavio {
+            background-color: rgba(59, 130, 246, 0.12);
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+
+        .state-banner-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #a1a1aa;
+        }
+
+        .state-banner-highlight.leader-lula .state-banner-info { color: #fca5a5; }
+        .state-banner-highlight.leader-flavio .state-banner-info { color: #93c5fd; }
+
+        .state-status-pill {
+            font-size: 0.62rem;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background-color: #272732;
+            color: #d4d4d8;
+            text-transform: uppercase;
+        }
+
+        .state-banner-highlight.leader-lula .state-status-pill { background-color: #ef4444; color: #ffffff; }
+        .state-banner-highlight.leader-flavio .state-status-pill { background-color: #3b82f6; color: #ffffff; }
+
+        .headline {
+            font-family: 'Newsreader', serif;
+            font-size: 1.55rem;
+            line-height: 1.25;
+            color: #ffffff;
+            margin-bottom: 20px;
+        }
+
+        .headline strong.flavio { color: #3b82f6; font-weight: 600; }
+        .headline strong.lula { color: #ef4444; font-weight: 600; }
+        .headline span.winner { color: #facc15; font-weight: 700; }
+
+        .candidates-duel { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 18px; 
+            margin-bottom: 16px; 
+        }
+
+        .duel-card { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 6px; 
+            padding: 14px 18px;
+            background-color: #17171d;
+            border: 1px solid #272732;
+            border-radius: 14px;
+            position: relative;
+        }
+
+        .duel-card.order-first { order: 1; }
+        .duel-card.order-second { order: 2; }
+
+        .elected-badge {
+            display: none;
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            background-color: #facc15;
+            color: #000000;
+            font-size: 0.62rem;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .duel-card.eleito .elected-badge {
+            display: inline-block;
+        }
+
+        .duel-header { display: flex; align-items: center; gap: 14px; }
+
+        .candidate-photo-only {
+            width: 62px;
+            height: 62px;
+            object-fit: contain;
+            flex-shrink: 0;
+            background: transparent;
+            border: none;
+            filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.5));
+        }
+
+        .duel-pct { 
+            font-size: 2rem; 
+            font-weight: 700; 
+            line-height: 1.1; 
+            color: #ffffff; 
+        }
+
+        .duel-pct span.symbol-lula { color: #ef4444; }
+        .duel-pct span.symbol-flavio { color: #3b82f6; }
+
+        .duel-votes { font-size: 0.78rem; color: #a1a1aa; }
+
+        .bar-container { height: 6px; background-color: #22222b; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+        .bar-fill { height: 100%; transition: width 0.8s ease; }
+        .bar-fill.lula { background-color: #ef4444; }
+        .bar-fill.flavio { background-color: #3b82f6; }
+
+        .progress-under-candidates {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .progress-info-mini {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.70rem;
+            color: #a1a1aa;
+        }
+
+        .progress-info-mini strong {
+            color: #e4e4e7;
+        }
+
+        .global-bar-outer {
+            width: 100%;
+            height: 4px;
+            background-color: #1e1e24;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .global-bar-inner {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
+            width: 0%;
+            transition: width 0.8s ease;
+        }
+
+        .diff-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #d4d4d8;
+            padding-top: 12px;
+            border-top: 1px solid #1e1e24;
+            font-weight: 500;
+        }
+
+        .extra-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed #22222b;
+            font-size: 0.72rem;
+            color: #a1a1aa;
+        }
+
+        .extra-stats span {
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #22222b;
+        }
+
+        .box-title { font-size: 0.95rem; font-weight: 700; }
+
+        .map-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-reset-map {
+            background-color: #1e1e28;
+            border: 1px solid #3f3f46;
+            color: #d4d4d8;
+            font-size: 0.70rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: none;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .btn-reset-map:hover {
+            background-color: #272732;
+            color: #ffffff;
+        }
+
+        .region-select {
+            background-color: #1a1a20;
+            border: 1px solid #2e2e38;
+            color: #e4e4e7;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        #mapaReal {
+            width: 100%;
+            height: 520px;
+            background-color: #121216;
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .leaflet-control-container .leaflet-routing-container-hide,
+        .leaflet-control-zoom, .leaflet-control-attribution {
+            display: none !important;
+        }
+
+        .leaflet-tooltip-custom {
+            background: #181820;
+            border: 1px solid #3f3f46;
+            color: #ffffff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.78rem;
+            border-radius: 6px;
+            padding: 6px 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+        }
+
+        .map-legend {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 12px;
+            font-size: 0.75rem;
+            color: #a1a1aa;
+        }
+
+        .dot-legend { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+        .dot-legend.pt { background-color: #ef4444; }
+        .dot-legend.pl { background-color: #3b82f6; }
+
+        .chart-card {
+            background-color: #121216;
+            border: 1px solid #22222b;
+            border-radius: 20px;
+            padding: 24px;
+            width: 100%;
+        }
+
+        .chart-container { width: 100%; height: 220px; margin-top: 12px; }
+
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+            .dashboard-card { padding: 16px; min-width: 100%; }
+            #mapaReal { height: 360px; }
+            .headline { font-size: 1.35rem; }
+            .duel-pct { font-size: 1.7rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-container">
+
+        <div class="wrapper-side-by-side">
+
+            <!-- CARD DOS CANDIDATOS -->
+            <div class="dashboard-card">
+                <div>
+                    <!-- BARRA DINÂMICA DE ESTADO -->
+                    <div class="state-banner-highlight" id="stateHighlightBanner">
+                        <div class="state-banner-info">
+                            <span id="regionTitleLabel">PRESIDENTE · BRASIL</span>
+                        </div>
+                        <span class="state-status-pill" id="stateStatusPill">2º Turno</span>
+                    </div>
+                    
+                    <h2 class="headline" id="headlineText">
+                        Aguardando dados oficiais do TSE...
+                    </h2>
+
+                    <div class="candidates-duel" id="candidatesContainer">
+                        <!-- Lula -->
+                        <div class="duel-card order-first" id="cardLula">
+                            <span class="elected-badge">Eleito</span>
+                            <div class="duel-header">
+                                <img src="lula.png" class="candidate-photo-only" alt="Lula">
+                                <div>
+                                    <h4>Lula</h4>
+                                    <p style="font-size:0.68rem; color:#a1a1aa">PT 13</p>
+                                </div>
+                            </div>
+                            <div class="duel-pct" id="lulaPct">0,00<span class="symbol-lula">%</span></div>
+                            <div class="duel-votes" id="lulaVotes">0 votos</div>
+                            <div class="bar-container"><div class="bar-fill lula" id="lulaBar" style="width:0%"></div></div>
+                        </div>
+
+                        <!-- Flávio Bolsonaro -->
+                        <div class="duel-card order-second" id="cardFlavio">
+                            <span class="elected-badge">Eleito</span>
+                            <div class="duel-header">
+                                <img src="flavio.png" class="candidate-photo-only" alt="Flávio Bolsonaro">
+                                <div>
+                                    <h4>Flávio Bolsonaro</h4>
+                                    <p style="font-size:0.68rem; color:#a1a1aa">PL 22</p>
+                                </div>
+                            </div>
+                            <div class="duel-pct" id="flavioPct">0,00<span class="symbol-flavio">%</span></div>
+                            <div class="duel-votes" id="flavioVotes">0 votos</div>
+                            <div class="bar-container"><div class="bar-fill flavio" id="flavioBar" style="width:0%"></div></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-under-candidates">
+                        <div class="progress-info-mini">
+                            <span>Urnas apuradas: <strong id="globalPctText">0,00%</strong></span>
+                            <span>Atualização TSE: <strong id="lastUpdateClock">--:--:--</strong></span>
+                        </div>
+                        <div class="global-bar-outer">
+                            <div class="global-bar-inner" id="globalProgressBar"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="diff-info">
+                        <span id="diffText">Diferença: 0 votos</span>
+                        <span id="secoesText">0,00% apurado</span>
+                    </div>
+
+                    <div class="extra-stats">
+                        <div>Votos Válidos: <span id="votosValidosText">0</span></div>
+                        <div>Abstenções: <span id="abstencoesText">0</span></div>
+                        <div>Brancos: <span id="brancosText">0</span></div>
+                        <div>Nulos: <span id="nulosText">0</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MAPA DA ELEIÇÃO -->
+            <div class="dashboard-card">
+                <div class="box-header">
+                    <span class="box-title">Mapa por Estado</span>
+                    <div class="map-header-actions">
+                        <button class="btn-reset-map" id="btnResetMap" onclick="voltarParaBrasil()">Brasil</button>
+                        <select class="region-select" id="filterUF" aria-label="Filtrar por Estado" onchange="alterarUF()">
+                            <option value="br">Todas as UFs (Brasil)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="mapaReal"></div>
+
+                <div class="map-legend">
+                    <span><i class="dot-legend pt"></i> PT (Lula)</span>
+                    <span><i class="dot-legend pl"></i> PL (Flávio)</span>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- GRÁFICO HISTÓRICO -->
+        <div class="chart-card">
+            <div class="box-header">
+                <span class="box-title">Evolução da apuração em tempo real</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+    const API_PROXY_URL = 'http://localhost:3000/api/tse';
+    const TOTAL_ELEITORES_NACIONAL = 158745463;
+
+    function normalizarTexto(txt) {
+        return (txt || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
+    const nomesEstados = {
+        'br': 'Brasil', 'ac': 'Acre', 'al': 'Alagoas', 'ap': 'Amapá', 'am': 'Amazonas',
+        'ba': 'Bahia', 'ce': 'Ceará', 'df': 'Distrito Federal', 'es': 'Espírito Santo',
+        'go': 'Goiás', 'ma': 'Maranhão', 'mt': 'Mato Grosso', 'ms': 'Mato Grosso do Sul',
+        'mg': 'Minas Gerais', 'pa': 'Pará', 'pb': 'Paraíba', 'pr': 'Paraná', 'pe': 'Pernambuco',
+        'pi': 'Piauí', 'rj': 'Rio de Janeiro', 'rn': 'Rio Grande do Norte', 'rs': 'Rio Grande do Sul',
+        'ro': 'Rondônia', 'rr': 'Roraima', 'sc': 'Santa Catarina', 'sp': 'São Paulo', 'se': 'Sergipe', 'to': 'Tocantins'
+    };
+
+    const preposicaoUF = {
+        'ac': 'no ', 'al': 'em ', 'ap': 'no ', 'am': 'no ', 'ba': 'na ',
+        'ce': 'no ', 'df': 'no ', 'es': 'no ', 'go': 'em ', 'ma': 'no ',
+        'mt': 'no ', 'ms': 'no ', 'mg': 'em ', 'pa': 'no ', 'pb': 'na ',
+        'pr': 'no ', 'pe': 'em ', 'pi': 'no ', 'rj': 'no ', 'rn': 'no ',
+        'rs': 'no ', 'ro': 'em ', 'rr': 'em ', 'sc': 'em ', 'sp': 'em ',
+        'se': 'em ', 'to': 'no '
+    };
+
+    const UFs = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+    
+    let dadosEstados = {};
+    UFs.forEach(uf => {
+        dadosEstados[uf.toLowerCase()] = { vLula: 0, vFlavio: 0, pctApurado: 0 };
+    });
+
+    const selectUF = document.getElementById('filterUF');
+    UFs.forEach(uf => {
+        let opt = document.createElement('option');
+        let key = uf.toLowerCase();
+        opt.value = key;
+        opt.innerText = `${nomesEstados[key]} (${uf})`;
+        selectUF.appendChild(opt);
+    });
+
+    const map = L.map('mapaReal', {
+        zoomControl: false,
+        attributionControl: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        dragging: false,
+        zoomSnap: 0.1
+    }).setView([-14.2, -52.5], 4.2);
+
+    let geojsonLayer = null;
+    let layersByUF = {};
+    let ufHoverAtiva = null;
+
+    fetch('https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson')
+        .then(res => res.json())
+        .then(geoData => {
+            geojsonLayer = L.geoJson(geoData, {
+                style: styleState,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+
+            setTimeout(() => {
+                map.invalidateSize();
+                map.fitBounds(geojsonLayer.getBounds(), { padding: [15, 15] });
+            }, 200);
+        });
+
+    function styleState(feature) {
+        let uf = feature.properties.sigla.toLowerCase();
+        let d = dadosEstados[uf];
+        let color = '#18181f';
+
+        if (d && (d.vLula > 0 || d.vFlavio > 0)) {
+            color = d.vLula > d.vFlavio ? '#ef4444' : '#3b82f6';
+        }
+
+        let ufSelecionada = document.getElementById('filterUF').value;
+        let isSelected = (ufSelecionada === uf);
+        let isHovered = (ufHoverAtiva === uf);
+
+        return {
+            fillColor: color,
+            weight: isSelected || isHovered ? 2.5 : 1.2,
+            opacity: 1,
+            color: isSelected || isHovered ? '#facc15' : '#ffffff',
+            fillOpacity: isSelected ? 1.0 : 0.9
+        };
+    }
+
+    function onEachFeature(feature, layer) {
+        let uf = feature.properties.sigla.toLowerCase();
+        layersByUF[uf] = layer;
+
+        layer.on({
+            click: () => {
+                document.getElementById('filterUF').value = uf;
+                alterarUF();
+            },
+            mouseover: (e) => {
+                ufHoverAtiva = uf;
+                let d = dadosEstados[uf];
+                let totalV = d ? d.vLula + d.vFlavio : 0;
+                let pctL = totalV > 0 ? ((d.vLula / totalV) * 100).toFixed(1) : '0.0';
+                let pctF = totalV > 0 ? ((d.vFlavio / totalV) * 100).toFixed(1) : '0.0';
+
+                let infoTooltip = totalV > 0 
+                    ? `<span style="color:#ef4444">Lula: ${pctL}%</span> | <span style="color:#3b82f6">Flávio: ${pctF}%</span>`
+                    : `<span style="color:#a1a1aa">Aguardando boletins...</span>`;
+
+                layer.bindTooltip(`
+                    <strong>${feature.properties.name} (${uf.toUpperCase()})</strong><br/>
+                    Apurado: ${d ? d.pctApurado.toFixed(1) : 0}%<br/>
+                    ${infoTooltip}
+                `, { className: 'leaflet-tooltip-custom', sticky: true }).openTooltip();
+
+                let ufSelecionada = document.getElementById('filterUF').value;
+                if (ufSelecionada !== uf) {
+                    layer.setStyle({ weight: 2.5, color: '#facc15' });
+                }
+            },
+            mouseout: (e) => {
+                ufHoverAtiva = null;
+                if (geojsonLayer) geojsonLayer.resetStyle(layer);
+            }
+        });
+    }
+
+    window.addEventListener('resize', () => {
+        if (map && geojsonLayer) {
+            map.invalidateSize();
+        }
+    });
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            voltarParaBrasil();
+        }
+    });
+
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'Lula (PT)', data: [], borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderWidth: 2.5, tension: 0.2 },
+                { label: 'Flávio Bolsonaro (PL)', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderWidth: 2.5, tension: 0.2 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { grid: { color: '#1e1e24' }, ticks: { color: '#a1a1aa' } },
+                y: { grid: { color: '#1e1e24' }, ticks: { color: '#a1a1aa' } }
+            },
+            plugins: { legend: { labels: { color: '#d4d4d8' } } }
+        }
+    });
+
+    async function carregarHistoricoServidor() {
+        try {
+            const response = await fetch(`${API_PROXY_URL}/historico`);
+            if (response.ok) {
+                const hist = await response.json();
+                if (hist && hist.labels && hist.labels.length > 0) {
+                    trendChart.data.labels = hist.labels;
+                    trendChart.data.datasets[0].data = hist.lula;
+                    trendChart.data.datasets[1].data = hist.flavio;
+                    trendChart.update();
+                }
+            }
+        } catch (err) {
+            console.error("Erro ao carregar histórico do servidor:", err);
+        }
+    }
+
+    carregarHistoricoServidor();
+
+    async function buscarDadosTSE(uf = 'br') {
+        const url = `${API_PROXY_URL}/${uf}`;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) return null;
+            return await response.json();
+        } catch (err) {
+            return null;
+        }
+    }
+
+    let isUpdating = false;
+    let timerAtualizacao = null;
+    let eleitoNacional = null;
+
+    async function atualizarTudo() {
+        if (isUpdating) return;
+        isUpdating = true;
+
+        try {
+            let ufSelecionada = document.getElementById('filterUF').value;
+
+            let dadosBR = await buscarDadosTSE('br');
+            if (dadosBR) {
+                verificarEleitoNacional(dadosBR);
+            }
+
+            let dadosExibicao = (ufSelecionada === 'br') ? dadosBR : await buscarDadosTSE(ufSelecionada);
+            if (dadosExibicao) {
+                renderizarPainel(dadosExibicao, ufSelecionada);
+            }
+
+            const promessasUFs = UFs.map(uf => buscarDadosTSE(uf.toLowerCase()));
+            const resultadosUFs = await Promise.all(promessasUFs);
+
+            resultadosUFs.forEach((dataUF, index) => {
+                let ufLower = UFs[index].toLowerCase();
+                if (dataUF && dataUF.cand) {
+                    let vLula = 0, vFlavio = 0;
+                    dataUF.cand.forEach(c => {
+                        let nomeNorm = normalizarTexto(c.nm);
+                        let numCand = c.n || '';
+
+                        if (numCand === '13' || nomeNorm.includes('lula')) {
+                            vLula = parseInt(c.vap || 0);
+                        } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
+                            vFlavio = parseInt(c.vap || 0);
+                        }
+                    });
+
+                    dadosEstados[ufLower] = {
+                        vLula: vLula,
+                        vFlavio: vFlavio,
+                        pctApurado: parseFloat((dataUF.pst || "0").replace(',', '.'))
+                    };
+                }
+            });
+
+            if (geojsonLayer) geojsonLayer.setStyle(styleState);
+        } finally {
+            isUpdating = false;
+        }
+    }
+
+    function verificarEleitoNacional(dataBR) {
+        if (!dataBR || !dataBR.cand) return;
+
+        let pctApuradoBR = parseFloat((dataBR.pst || "0").replace(',', '.'));
+        let vLulaBR = 0, vFlavioBR = 0;
+
+        dataBR.cand.forEach(c => {
+            let nomeNorm = normalizarTexto(c.nm);
+            let numCand = (c.n || '').toString().trim();
+
+            if (numCand === '13' || nomeNorm.includes('lula')) {
+                vLulaBR = parseInt(c.vap || 0, 10);
+            }
+            if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
+                vFlavioBR = parseInt(c.vap || 0, 10);
+            }
+        });
+
+        // Votos computados até agora
+        let vvc = parseInt(dataBR.vvc || 0, 10);
+        let a = parseInt(dataBR.a || 0, 10);
+        let vb = parseInt(dataBR.vb || 0, 10);
+        let tvn = parseInt(dataBR.tvn || 0, 10);
+        let totalApuradoMomento = vvc + a + vb + tvn;
+
+        // TRAVA DE SEGURANÇA 1: Só avalia "Matematicamente Eleito" após atingir pelo menos 80% das urnas apuradas.
+        // Isso evita gatilhos falsos nos primeiros minutos de apuração com amostra pequena.
+        if (pctApuradoBR < 80.0) {
+            eleitoNacional = null;
+            return;
+        }
+
+        // TRAVA DE SEGURANÇA 2: Projeção Pessimista de Votos Restantes.
+        // Assumimos um comparecimento máximo seguro (ex: 83% do total de eleitores) para nunca subestimar os votos que faltam.
+        let comparecimentoMaximoEstimado = Math.floor(TOTAL_ELEITORES_NACIONAL * 0.83);
+        let votosRestantesPessimista = Math.max(0, comparecimentoMaximoEstimado - totalApuradoMomento);
+        
+        let diferencaVotosBR = Math.abs(vLulaBR - vFlavioBR);
+
+        // REGRA OFICIAL DE DECLARAÇÃO
+        if (pctApuradoBR >= 100 || (diferencaVotosBR > votosRestantesPessimista && totalApuradoMomento > 0)) {
+            eleitoNacional = (vFlavioBR > vLulaBR) ? 'flavio' : 'lula';
+        } else {
+            eleitoNacional = null;
+        }
+    }
+
+    function renderizarPainel(data, uf) {
+        let pctApurado = parseFloat((data.pst || "0").replace(',', '.'));
+        document.getElementById('globalPctText').innerText = data.pst + '%';
+        document.getElementById('globalProgressBar').style.width = pctApurado + '%';
+
+        if (pctApurado >= 100) {
+            document.getElementById('lastUpdateClock').innerText = "100% · CONCLUÍDO";
+        } else {
+            document.getElementById('lastUpdateClock').innerText = (data && data.hg) ? data.hg : '--:--:--';
+        }
+
+        let vLula = 0, vFlavio = 0, pctL = 0, pctF = 0;
+
+        if (data && data.cand) {
+            data.cand.forEach(c => {
+                let nomeNorm = normalizarTexto(c.nm);
+                let numCand = c.n || '';
+
+                if (numCand === '13' || nomeNorm.includes('lula')) {
+                    vLula = parseInt(c.vap || 0);
+                    pctL = parseFloat((c.pvap || "0").replace(',', '.'));
+                } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
+                    vFlavio = parseInt(c.vap || 0);
+                    pctF = parseFloat((c.pvap || "0").replace(',', '.'));
+                }
+            });
+        }
+
+        document.getElementById('lulaPct').innerHTML = `${pctL.toFixed(2).replace('.', ',')}<span class="symbol-lula">%</span>`;
+        document.getElementById('lulaVotes').innerText = vLula.toLocaleString('pt-BR') + ' votos';
+        document.getElementById('lulaBar').style.width = pctL + '%';
+
+        document.getElementById('flavioPct').innerHTML = `${pctF.toFixed(2).replace('.', ',')}<span class="symbol-flavio">%</span>`;
+        document.getElementById('flavioVotes').innerText = vFlavio.toLocaleString('pt-BR') + ' votos';
+        document.getElementById('flavioBar').style.width = pctF + '%';
+
+        const cardLula = document.getElementById('cardLula');
+        const cardFlavio = document.getElementById('cardFlavio');
+        const headline = document.getElementById('headlineText');
+        const banner = document.getElementById('stateHighlightBanner');
+        const bannerLabel = document.getElementById('regionTitleLabel');
+        const bannerPill = document.getElementById('stateStatusPill');
+
+        const novoLider = vLula >= vFlavio ? 'lula' : 'flavio';
+
+        // REORDENAÇÃO DOS CARDS
+        if (novoLider === 'lula') {
+            cardLula.className = "duel-card order-first";
+            cardFlavio.className = "duel-card order-second";
+        } else {
+            cardFlavio.className = "duel-card order-first";
+            cardLula.className = "duel-card order-second";
+        }
+
+        // ETIQUETA "ELEITO" NO VENCEDOR NACIONAL
+        if (eleitoNacional === 'lula') {
+            cardLula.classList.add('eleito');
+            cardFlavio.classList.remove('eleito');
+        } else if (eleitoNacional === 'flavio') {
+            cardFlavio.classList.add('eleito');
+            cardLula.classList.remove('eleito');
+        } else {
+            cardLula.classList.remove('eleito');
+            cardFlavio.classList.remove('eleito');
+        }
+
+        let diferencaVotos = Math.abs(vLula - vFlavio);
+
+        // FORMATAÇÃO GRAMATICAL DO TÍTULO E BANNER COM SIGLA NA PÍLULA
+        if (uf === 'br') {
+            banner.className = "state-banner-highlight";
+            bannerLabel.innerText = "PRESIDENTE · BRASIL";
+            bannerPill.innerText = "2º Turno";
+
+            if (eleitoNacional === 'lula') {
+                headline.innerHTML = `<span class="winner">Lula</span> eleito Presidente da República`;
+                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
+            } else if (eleitoNacional === 'flavio') {
+                headline.innerHTML = `<span class="winner">Flávio Bolsonaro</span> eleito Presidente da República`;
+                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
+            } else {
+                headline.innerHTML = `Disputa no 2º turno: <strong class="lula">Lula</strong> e <strong class="flavio">Flávio Bolsonaro</strong>`;
+        document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
+            }
+        } else {
+            let nomeEstado = nomesEstados[uf] || uf.toUpperCase();
+            let siglaUF = uf.toUpperCase();
+            let prep = preposicaoUF[uf] || 'em ';
+            let localFormatado = prep + nomeEstado;
+            let siglaFormatada = prep + siglaUF;
+
+            if (vLula > vFlavio) {
+                let pctLFormatted = pctL.toFixed(2).replace('.', ',');
+                banner.className = "state-banner-highlight leader-lula";
+                bannerLabel.innerText = `${nomeEstado}`;
+                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
+
+                if (pctApurado >= 100) {
+                    headline.innerHTML = `<strong class="lula">Lula</strong> venceu ${localFormatado} com ${pctLFormatted}%`;
+                } else {
+                    headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctLFormatted}%`;
+                }
+            } else if (vFlavio > vLula) {
+                let pctFFormatted = pctF.toFixed(2).replace('.', ',');
+                banner.className = "state-banner-highlight leader-flavio";
+                bannerLabel.innerText = `${nomeEstado}`;
+                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
+
+                if (pctApurado >= 100) {
+                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> venceu ${localFormatado} com ${pctFFormatted}%`;
+                } else {
+                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctFFormatted}%`;
+                }
+            } else {
+                banner.className = "state-banner-highlight";
+                bannerLabel.innerText = `${nomesEstados[uf]} · Empate`;
+                bannerPill.innerText = "Indefinido";
+                headline.innerHTML = `Empate temporário ${localFormatado}`;
+            }
+
+            document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
+        }
+
+        document.getElementById('secoesText').innerText = `${pctApurado.toFixed(2).replace('.', ',')}% apurado`;
+
+        document.getElementById('votosValidosText').innerText = parseInt(data.vvc || 0).toLocaleString('pt-BR');
+        document.getElementById('abstencoesText').innerText = parseInt(data.a || 0).toLocaleString('pt-BR');
+        document.getElementById('brancosText').innerText = parseInt(data.vb || 0).toLocaleString('pt-BR');
+        document.getElementById('nulosText').innerText = parseInt(data.tvn || 0).toLocaleString('pt-BR');
+
+        // ATUALIZAÇÃO DO GRÁFICO COM TRAVA CORRETA PARA 100%
+        if (uf === 'br' && pctApurado > 0 && data.hg) {
+            let ultimoLabel = trendChart.data.labels[trendChart.data.labels.length - 1];
+            let apuracaoConcluidaNoGrafico = trendChart.data.labels.includes("CONCLUÍDO") || (pctApurado >= 100 && ultimoLabel === "100%");
+
+            if (!apuracaoConcluidaNoGrafico) {
+                let labelParaInserir = pctApurado >= 100 ? "CONCLUÍDO" : data.hg;
+                
+                if (!trendChart.data.labels.includes(labelParaInserir)) {
+                    if (trendChart.data.labels.length >= 200) {
+                        trendChart.data.labels.shift();
+                        trendChart.data.datasets[0].data.shift();
+                        trendChart.data.datasets[1].data.shift();
+                    }
+                    trendChart.data.labels.push(labelParaInserir);
+                    trendChart.data.datasets[0].data.push(pctL);
+                    trendChart.data.datasets[1].data.push(pctF);
+                    trendChart.update();
+                }
+            }
+        }
+    }
+
+    function alterarUF() {
+        let ufSelected = document.getElementById('filterUF').value;
+        
+        const btnReset = document.getElementById('btnResetMap');
+        btnReset.style.display = (ufSelected === 'br') ? 'none' : 'inline-block';
+
+        if (geojsonLayer) geojsonLayer.setStyle(styleState);
+
+        if (ufSelected !== 'br' && layersByUF[ufSelected]) {
+            map.fitBounds(layersByUF[ufSelected].getBounds(), { padding: [20, 20] });
+        } else if (geojsonLayer) {
+            map.fitBounds(geojsonLayer.getBounds(), { padding: [15, 15] });
+        }
+
+        atualizarTudo();
+    }
+
+    function voltarParaBrasil() {
+        document.getElementById('filterUF').value = 'br';
+        alterarUF();
+    }
+
+    timerAtualizacao = setInterval(atualizarTudo, 5000);
+    atualizarTudo();
+</script>
+</body>
+</html>
