@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 
-const app = express();
+const app = express(); app.use(express.static(__dirname));
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
