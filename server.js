@@ -2,7 +2,8 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 
-const app = express(); app.use(express.static(__dirname));
+const app = express(); 
+app.use(express.static(__dirname));
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
@@ -22,6 +23,13 @@ let cacheDadosBR = {
         { nm: 'LULA', n: '13', vap: '0', pvap: '0,00' },
         { nm: 'FLÁVIO BOLSONARO', n: '22', vap: '0', pvap: '0,00' }
     ]
+};
+
+// Histórico simples para alimentar o gráfico
+let historicoGrafico = {
+    labels: [],
+    lula: [],
+    flavio: []
 };
 
 // Função para buscar dados no TSE e atualizar o Cache
@@ -55,8 +63,15 @@ async function atualizarDadosTSE() {
 // Atualiza o cache a cada 3 segundos
 setInterval(atualizarDadosTSE, 3000);
 
-// Endpoint que o seu index.html consome
-app.get('/api/tse/br', (req, res) => {
+// Endpoint dinâmico que atende o Brasil ('br') e qualquer Estado (ex: 'ac', 'sp', etc.)
+app.get('/api/tse/:uf', (req, res) => {
+    const uf = req.params.uf.toLowerCase();
+    
+    if (uf === 'historico') {
+        return res.json(historicoGrafico);
+    }
+
+    // Retorna os dados gerais (ou você pode expandir para puxar o JSON específico da UF do TSE se desejar)
     res.json(cacheDadosBR);
 });
 
