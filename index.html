@@ -343,20 +343,6 @@
 
         .chart-container { width: 100%; height: 220px; margin-top: 12px; }
 
-        .footer-credits {
-            margin-top: 30px;
-            margin-bottom: 10px;
-            font-size: 0.8rem;
-            color: #71717a;
-            text-align: center;
-            letter-spacing: 0.5px;
-        }
-
-        .footer-credits strong {
-            color: #d4d4d8;
-            font-weight: 600;
-        }
-
         @media (max-width: 768px) {
             body { padding: 12px; }
             .dashboard-card { padding: 16px; min-width: 100%; }
@@ -478,6 +464,7 @@
         </div>
 
     </div>
+
     <script>
     const API_PROXY_URL = '/api/tse';
     const TOTAL_ELEITORES_NACIONAL = 158745463;
@@ -657,8 +644,6 @@
         }
     }
 
-    carregarHistoricoServidor();
-
     async function buscarDadosTSE(uf = 'br') {
         const url = `${API_PROXY_URL}/${uf}`;
         try {
@@ -671,7 +656,6 @@
     }
 
     let isUpdating = false;
-    let timerAtualizacao = null;
     let eleitoNacional = null;
 
     async function atualizarTudo() {
@@ -681,6 +665,7 @@
         try {
             let ufSelecionada = document.getElementById('filterUF').value;
 
+            // Busca os dados centralizados do Brasil
             let dadosBR = await buscarDadosTSE('br');
             if (dadosBR) {
                 verificarEleitoNacional(dadosBR);
@@ -691,33 +676,8 @@
                 renderizarPainel(dadosExibicao, ufSelecionada);
             }
 
-            const promessasUFs = UFs.map(uf => buscarDadosTSE(uf.toLowerCase()));
-            const resultadosUFs = await Promise.all(promessasUFs);
-
-            resultadosUFs.forEach((dataUF, index) => {
-                let ufLower = UFs[index].toLowerCase();
-                if (dataUF && dataUF.cand) {
-                    let vLula = 0, vFlavio = 0;
-                    dataUF.cand.forEach(c => {
-                        let nomeNorm = normalizarTexto(c.nm);
-                        let numCand = c.n || '';
-
-                        if (numCand === '13' || nomeNorm.includes('lula')) {
-                            vLula = parseInt(c.vap || 0);
-                        } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
-                            vFlavio = parseInt(c.vap || 0);
-                        }
-                    });
-
-                    dadosEstados[ufLower] = {
-                        vLula: vLula,
-                        vFlavio: vFlavio,
-                        pctApurado: parseFloat((dataUF.pst || "0").replace(',', '.'))
-                    };
-                }
-            });
-
-            if (geojsonLayer) geojsonLayer.setStyle(styleState);
+            // Atualiza o gráfico buscando direto do endpoint de histórico do servidor
+            carregarHistoricoServidor();
         } finally {
             isUpdating = false;
         }
@@ -741,28 +701,21 @@
             }
         });
 
-        // Votos computados até agora
         let vvc = parseInt(dataBR.vvc || 0, 10);
         let a = parseInt(dataBR.a || 0, 10);
         let vb = parseInt(dataBR.vb || 0, 10);
         let tvn = parseInt(dataBR.tvn || 0, 10);
         let totalApuradoMomento = vvc + a + vb + tvn;
 
-        // TRAVA DE SEGURANÇA 1: Só avalia "Matematicamente Eleito" após atingir pelo menos 80% das urnas apuradas.
-        // Isso evita gatilhos falsos nos primeiros minutos de apuração com amostra pequena.
         if (pctApuradoBR < 80.0) {
             eleitoNacional = null;
             return;
         }
 
-        // TRAVA DE SEGURANÇA 2: Projeção Pessimista de Votos Restantes.
-        // Assumimos um comparecimento máximo seguro (ex: 83% do total de eleitores) para nunca subestimar os votos que faltam.
         let comparecimentoMaximoEstimado = Math.floor(TOTAL_ELEITORES_NACIONAL * 0.83);
         let votosRestantesPessimista = Math.max(0, comparecimentoMaximoEstimado - totalApuradoMomento);
-        
         let diferencaVotosBR = Math.abs(vLulaBR - vFlavioBR);
 
-        // REGRA OFICIAL DE DECLARAÇÃO
         if (pctApuradoBR >= 100 || (diferencaVotosBR > votosRestantesPessimista && totalApuradoMomento > 0)) {
             eleitoNacional = (vFlavioBR > vLulaBR) ? 'flavio' : 'lula';
         } else {
@@ -815,7 +768,6 @@
 
         const novoLider = vLula >= vFlavio ? 'lula' : 'flavio';
 
-        // REORDENAÇÃO DOS CARDS
         if (novoLider === 'lula') {
             cardLula.className = "duel-card order-first";
             cardFlavio.className = "duel-card order-second";
@@ -824,7 +776,6 @@
             cardLula.className = "duel-card order-second";
         }
 
-        // ETIQUETA "ELEITO" NO VENCEDOR NACIONAL
         if (eleitoNacional === 'lula') {
             cardLula.classList.add('eleito');
             cardFlavio.classList.remove('eleito');
@@ -838,7 +789,6 @@
 
         let diferencaVotos = Math.abs(vLula - vFlavio);
 
-        // FORMATAÇÃO GRAMATICAL DO TÍTULO E BANNER COM SIGLA NA PÍLULA
         if (uf === 'br') {
             banner.className = "state-banner-highlight";
             bannerLabel.innerText = "PRESIDENTE · BRASIL";
@@ -852,7 +802,7 @@
                 document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
             } else {
                 headline.innerHTML = `Disputa no 2º turno: <strong class="lula">Lula</strong> e <strong class="flavio">Flávio Bolsonaro</strong>`;
-        document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
+                document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
             }
         } else {
             let nomeEstado = nomesEstados[uf] || uf.toUpperCase();
@@ -899,28 +849,6 @@
         document.getElementById('abstencoesText').innerText = parseInt(data.a || 0).toLocaleString('pt-BR');
         document.getElementById('brancosText').innerText = parseInt(data.vb || 0).toLocaleString('pt-BR');
         document.getElementById('nulosText').innerText = parseInt(data.tvn || 0).toLocaleString('pt-BR');
-
-        // ATUALIZAÇÃO DO GRÁFICO COM TRAVA CORRETA PARA 100%
-        if (uf === 'br' && pctApurado > 0 && data.hg) {
-            let ultimoLabel = trendChart.data.labels[trendChart.data.labels.length - 1];
-            let apuracaoConcluidaNoGrafico = trendChart.data.labels.includes("CONCLUÍDO") || (pctApurado >= 100 && ultimoLabel === "100%");
-
-            if (!apuracaoConcluidaNoGrafico) {
-                let labelParaInserir = pctApurado >= 100 ? "CONCLUÍDO" : data.hg;
-                
-                if (!trendChart.data.labels.includes(labelParaInserir)) {
-                    if (trendChart.data.labels.length >= 200) {
-                        trendChart.data.labels.shift();
-                        trendChart.data.datasets[0].data.shift();
-                        trendChart.data.datasets[1].data.shift();
-                    }
-                    trendChart.data.labels.push(labelParaInserir);
-                    trendChart.data.datasets[0].data.push(pctL);
-                    trendChart.data.datasets[1].data.push(pctF);
-                    trendChart.update();
-                }
-            }
-        }
     }
 
     function alterarUF() {
@@ -945,7 +873,7 @@
         alterarUF();
     }
 
-    timerAtualizacao = setInterval(atualizarTudo, 5000);
+    setInterval(atualizarTudo, 5000);
     atualizarTudo();
 </script>
 </body>
