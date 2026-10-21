@@ -25,14 +25,19 @@ let cacheDadosBR = {
     ]
 };
 
-// Histórico simples para alimentar o gráfico
+// Histórico simples para alimentar o gráfico (agora preenchido automaticamente)
 let historicoGrafico = {
     labels: [],
     lula: [],
     flavio: []
 };
 
-// Função para buscar dados no TSE e atualizar o Cache
+// Função auxiliar para normalizar texto
+function normalizarTexto(txt) {
+    return (txt || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+// Função para buscar dados no TSE e atualizar o Cache e o Histórico
 async function atualizarDadosTSE() {
     try {
         const response = await axios.get(TSE_URL_BR, { timeout: 3000 });
@@ -54,6 +59,34 @@ async function atualizarDadosTSE() {
                     pvap: c.pvap || '0,00'
                 }))
             };
+
+            // Atualização automática do histórico do gráfico
+            let pctLula = 0;
+            let pctFlavio = 0;
+
+            cacheDadosBR.cand.forEach(c => {
+                let nomeNorm = normalizarTexto(c.nm);
+                let numCand = c.n || '';
+                if (numCand === '13' || nomeNorm.includes('lula')) {
+                    pctLula = parseFloat((c.pvap || "0").replace(',', '.'));
+                } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
+                    pctFlavio = parseFloat((c.pvap || "0").replace(',', '.'));
+                }
+            });
+
+            const horaAtual = cacheDadosBR.hg;
+            const pctApurado = parseFloat((cacheDadosBR.pst || "0").replace(',', '.'));
+
+            if (pctApurado > 0 && !historicoGrafico.labels.includes(horaAtual)) {
+                if (historicoGrafico.labels.length >= 200) {
+                    historicoGrafico.labels.shift();
+                    historicoGrafico.lula.shift();
+                    historicoGrafico.flavio.shift();
+                }
+                historicoGrafico.labels.push(horaAtual);
+                historicoGrafico.lula.push(pctLula);
+                historicoGrafico.flavio.push(pctFlavio);
+            }
         }
     } catch (error) {
         console.warn("[AVISO TSE] Falha temporária ao conectar ao TSE. Mantendo dados do cache.");
@@ -63,7 +96,7 @@ async function atualizarDadosTSE() {
 // Atualiza o cache a cada 3 segundos
 setInterval(atualizarDadosTSE, 3000);
 
-// Endpoint dinâmico que atende o Brasil ('br') e qualquer Estado (ex: 'ac', 'sp', etc.)
+// Endpoint dinâmico que atende o Brasil ('br') e o histórico
 app.get('/api/tse/:uf', (req, res) => {
     const uf = req.params.uf.toLowerCase();
     
@@ -71,7 +104,7 @@ app.get('/api/tse/:uf', (req, res) => {
         return res.json(historicoGrafico);
     }
 
-    // Retorna os dados gerais (ou você pode expandir para puxar o JSON específico da UF do TSE se desejar)
+    // Retorna os dados gerais cacheados
     res.json(cacheDadosBR);
 });
 
