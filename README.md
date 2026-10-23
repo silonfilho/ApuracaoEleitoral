@@ -18,3 +18,5 @@ via a local web server such as Apache or Live Server.
 The backend exposes two primary API endpoints for data consumption. The GET /api/tse/br route retrieves consolidated national election results alongside general
 metadata, while GET /api/tse/:uf delivers state-specific metrics based on the requested two-letter state code. This project is open-source and available under
 the MIT License.
+
+To access the site, put this link in your browser: [https://apuracaoeleitoral.onrender.com/](https://apuracaoeleitoral.onrender.com/)
