@@ -8,8 +8,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// URL Oficial do Feed do TSE (Ajustar para o arquivo correto do 2º turno de 2026)
+// URL Oficial do Feed do TSE
 const TSE_URL_BR = 'https://resultados.tse.jus.br/oficial/ele2026/545/dados-simplificados/br/br-c0001-e000545-r.json';
+
+// Variáveis de controlo de estado e resiliência
+let falhasConsecutivas = 0;
+const LIMITE_ALERTA_FALHAS = 3;
 
 // Cache em Memória para isolar o frontend de falhas de rede do TSE
 let cacheDadosBR = {
@@ -25,7 +29,7 @@ let cacheDadosBR = {
     ]
 };
 
-// Histórico simples para alimentar o gráfico (agora preenchido automaticamente)
+// Histórico simples para alimentar o gráfico
 let historicoGrafico = {
     labels: [],
     lula: [],
@@ -37,14 +41,15 @@ function normalizarTexto(txt) {
     return (txt || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-// Função para buscar dados no TSE e atualizar o Cache e o Histórico
+// Função para buscar dados no TSE, atualizar o Cache e monitorizar falhas
 async function atualizarDadosTSE() {
     try {
         const response = await axios.get(TSE_URL_BR, { timeout: 3000 });
         if (response.data) {
+            // Sucesso: reseta o contador de falhas
+            falhasConsecutivas = 0;
             const data = response.data;
             
-            // Sanitização e garantia de formato correto
             cacheDadosBR = {
                 pst: data.pst || "0,00",
                 hg: data.hg || new Date().toTimeString().split(' ')[0],
@@ -60,7 +65,6 @@ async function atualizarDadosTSE() {
                 }))
             };
 
-            // Atualização automática do histórico do gráfico
             let pctLula = 0;
             let pctFlavio = 0;
 
@@ -89,14 +93,30 @@ async function atualizarDadosTSE() {
             }
         }
     } catch (error) {
-        console.warn("[AVISO TSE] Falha temporária ao conectar ao TSE. Mantendo dados do cache.");
+        falhasConsecutivas++;
+        console.warn(`[AVISO TSE] Falha temporária ao ligar ao TSE (Tentativa ${falhasConsecutivas}). Mantendo dados do cache.`);
+
+        if (falhasConsecutivas >= LIMITE_ALERTA_FALHAS) {
+            console.error(`[ALERTA CRÍTICO] O feed oficial do TSE falhou ${falhasConsecutivas} vezes seguidas. Verifique a infraestrutura.`);
+            // Nota: Se utilizar ferramentas como Discord/Telegram, pode disparar um webhook aqui.
+        }
     }
 }
 
-// Atualiza o cache a cada 3 segundos
+// Atualiza o cache a cada 3 segundos[cite: 3]
 setInterval(atualizarDadosTSE, 3000);
 
-// Endpoint dinâmico que atende o Brasil ('br') e o histórico
+// NOVO: Endpoint de Health Check para monitorização externa
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'online',
+        ultimaAtualizacaoTSE: cacheDadosBR.hg,
+        falhasConsecutivasTSE: falhasConsecutivas,
+        servidorAtivoDesde: new Date().toISOString()
+    });
+});
+
+// Endpoint dinâmico que atende o Brasil ('br') e o histórico[cite: 3]
 app.get('/api/tse/:uf', (req, res) => {
     const uf = req.params.uf.toLowerCase();
     
@@ -104,7 +124,6 @@ app.get('/api/tse/:uf', (req, res) => {
         return res.json(historicoGrafico);
     }
 
-    // Retorna os dados gerais cacheados
     res.json(cacheDadosBR);
 });
 
