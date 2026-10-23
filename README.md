@@ -19,4 +19,4 @@ The backend exposes two primary API endpoints for data consumption. The GET /api
 metadata, while GET /api/tse/:uf delivers state-specific metrics based on the requested two-letter state code. This project is open-source and available under
 the MIT License.
 
-To access the site, put this link in your browser: [https://apuracaoeleitoral.onrender.com/](https://apuracaoeleitoral.onrender.com/)
+To access the website, click on this link: [https://apuracaoeleitoral.onrender.com/](https://apuracaoeleitoral.onrender.com/)
