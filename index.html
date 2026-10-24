@@ -665,7 +665,7 @@
         try {
             let ufSelecionada = document.getElementById('filterUF').value;
 
-            // Busca os dados centralizados do Brasil
+            // Busca dados nacionais para verificação de vitória global
             let dadosBR = await buscarDadosTSE('br');
             if (dadosBR) {
                 verificarEleitoNacional(dadosBR);
@@ -676,7 +676,6 @@
                 renderizarPainel(dadosExibicao, ufSelecionada);
             }
 
-            // Atualiza o gráfico buscando direto do endpoint de histórico do servidor
             carregarHistoricoServidor();
         } finally {
             isUpdating = false;
@@ -814,7 +813,7 @@
             if (vLula > vFlavio) {
                 let pctLFormatted = pctL.toFixed(2).replace('.', ',');
                 banner.className = "state-banner-highlight leader-lula";
-                bannerLabel.innerText = `${nomeEstado}`;
+                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
                 bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
 
                 if (pctApurado >= 100) {
@@ -825,7 +824,7 @@
             } else if (vFlavio > vLula) {
                 let pctFFormatted = pctF.toFixed(2).replace('.', ',');
                 banner.className = "state-banner-highlight leader-flavio";
-                bannerLabel.innerText = `${nomeEstado}`;
+                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
                 bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
 
                 if (pctApurado >= 100) {
@@ -835,7 +834,7 @@
                 }
             } else {
                 banner.className = "state-banner-highlight";
-                bannerLabel.innerText = `${nomesEstados[uf]} · Empate`;
+                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
                 bannerPill.innerText = "Indefinido";
                 headline.innerHTML = `Empate temporário ${localFormatado}`;
             }
