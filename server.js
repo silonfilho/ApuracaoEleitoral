@@ -135,9 +135,12 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Endpoint para consulta de histórico específico por UF
-app.get('/api/tse/historico/:uf?', (req, res) => {
-    const uf = (req.params.uf || 'br').toLowerCase();
+app.get('/api/tse/historico', (req, res) => {
+    res.json(historicoGraficoUF['br']);
+});
+
+app.get('/api/tse/historico/:uf', (req, res) => {
+    const uf = req.params.uf.toLowerCase();
     if (!UFS_VALIDAS.includes(uf)) {
         return res.status(400).json({ error: "UF inválida." });
     }
