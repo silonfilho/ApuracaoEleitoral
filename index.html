@@ -473,7 +473,6 @@
         return (txt || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     }
 
-    // Função auxiliar para animação suave de números (Sugestão 2)
     function animarElemento(id, novoValorNum, ehPorcentagem, classeSimbolo, sufixoTexto = '') {
         const el = document.getElementById(id);
         if (!el) return;
@@ -667,10 +666,11 @@
 
     async function carregarHistoricoServidor() {
         try {
-            const response = await fetch(`${API_PROXY_URL}/historico`);
+            let ufSelecionada = document.getElementById('filterUF').value;
+            const response = await fetch(`${API_PROXY_URL}/historico/${ufSelecionada}`);
             if (response.ok) {
                 const hist = await response.json();
-                if (hist && hist.labels && hist.labels.length > 0) {
+                if (hist && hist.labels) {
                     trendChart.data.labels = hist.labels;
                     trendChart.data.datasets[0].data = hist.lula;
                     trendChart.data.datasets[1].data = hist.flavio;
@@ -691,6 +691,28 @@
         } catch (err) {
             return null;
         }
+    }
+
+    async function carregarDadosEstadosParaMapa() {
+        for (const uf of UFs) {
+            let key = uf.toLowerCase();
+            let dataUF = await buscarDadosTSE(key);
+            if (dataUF && dataUF.cand) {
+                let vLula = 0, vFlavio = 0;
+                dataUF.cand.forEach(c => {
+                    let nomeNorm = normalizarTexto(c.nm);
+                    let num = c.n || '';
+                    if (num === '13' || nomeNorm.includes('lula')) vLula = parseInt(c.vap || 0);
+                    if (num === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) vFlavio = parseInt(c.vap || 0);
+                });
+                dadosEstados[key] = {
+                    vLula: vLula,
+                    vFlavio: vFlavio,
+                    pctApurado: parseFloat((dataUF.pst || "0").replace(',', '.'))
+                };
+            }
+        }
+        if (geojsonLayer) geojsonLayer.setStyle(styleState);
     }
 
     let isUpdating = false;
@@ -787,7 +809,6 @@
             });
         }
 
-        // Aplicando a animação suave nos valores (Sugestão 2)
         animarElemento('lulaPct', pctL, true, 'symbol-lula');
         animarElemento('lulaVotes', vLula, false, '', ' votos');
         document.getElementById('lulaBar').style.width = pctL + '%';
@@ -911,7 +932,10 @@
     }
 
     setInterval(atualizarTudo, 5000);
+    setInterval(carregarDadosEstadosParaMapa, 15000);
+
     atualizarTudo();
+    carregarDadosEstadosParaMapa();
 </script>
 </body>
 </html>
