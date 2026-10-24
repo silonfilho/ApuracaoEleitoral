@@ -473,6 +473,44 @@
         return (txt || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     }
 
+    // Função auxiliar para animação suave de números (Sugestão 2)
+    function animarElemento(id, novoValorNum, ehPorcentagem, classeSimbolo, sufixoTexto = '') {
+        const el = document.getElementById(id);
+        if (!el) return;
+        
+        let valorAntigoStr = el.innerText.replace('%', '').replace(' votos', '').replace(/\./g, '').replace(',', '.');
+        let valorAntigo = parseFloat(valorAntigoStr) || 0;
+        
+        if (valorAntigo === novoValorNum) {
+            if (ehPorcentagem) {
+                el.innerHTML = `${novoValorNum.toFixed(2).replace('.', ',')}<span class="${classeSimbolo}">%</span>`;
+            } else {
+                el.innerText = novoValorNum.toLocaleString('pt-BR') + sufixoTexto;
+            }
+            return;
+        }
+
+        let passos = 15;
+        let incremento = (novoValorNum - valorAntigo) / passos;
+        let atual = valorAntigo;
+        let passo = 0;
+
+        let timer = setInterval(() => {
+            passo++;
+            atual += incremento;
+            if (passo >= passos) {
+                atual = novoValorNum;
+                clearInterval(timer);
+            }
+
+            if (ehPorcentagem) {
+                el.innerHTML = `${atual.toFixed(2).replace('.', ',')}<span class="${classeSimbolo}">%</span>`;
+            } else {
+                el.innerText = Math.round(atual).toLocaleString('pt-BR') + sufixoTexto;
+            }
+        }, 30);
+    }
+
     const nomesEstados = {
         'br': 'Brasil', 'ac': 'Acre', 'al': 'Alagoas', 'ap': 'Amapá', 'am': 'Amazonas',
         'ba': 'Bahia', 'ce': 'Ceará', 'df': 'Distrito Federal', 'es': 'Espírito Santo',
@@ -484,7 +522,7 @@
 
     const preposicaoUF = {
         'ac': 'no ', 'al': 'em ', 'ap': 'no ', 'am': 'no ', 'ba': 'na ',
-        'ce': 'no ', 'df': 'no ', 'es': 'no ', 'go': 'em ', 'ma': 'no ',
+        'ce': 'no ', 'df': 'no ', 'es': 'em ', 'go': 'em ', 'ma': 'no ',
         'mt': 'no ', 'ms': 'no ', 'mg': 'em ', 'pa': 'no ', 'pb': 'na ',
         'pr': 'no ', 'pe': 'em ', 'pi': 'no ', 'rj': 'no ', 'rn': 'no ',
         'rs': 'no ', 'ro': 'em ', 'rr': 'em ', 'sc': 'em ', 'sp': 'em ',
@@ -665,7 +703,6 @@
         try {
             let ufSelecionada = document.getElementById('filterUF').value;
 
-            // Busca dados nacionais para verificação de vitória global
             let dadosBR = await buscarDadosTSE('br');
             if (dadosBR) {
                 verificarEleitoNacional(dadosBR);
@@ -750,12 +787,13 @@
             });
         }
 
-        document.getElementById('lulaPct').innerHTML = `${pctL.toFixed(2).replace('.', ',')}<span class="symbol-lula">%</span>`;
-        document.getElementById('lulaVotes').innerText = vLula.toLocaleString('pt-BR') + ' votos';
+        // Aplicando a animação suave nos valores (Sugestão 2)
+        animarElemento('lulaPct', pctL, true, 'symbol-lula');
+        animarElemento('lulaVotes', vLula, false, '', ' votos');
         document.getElementById('lulaBar').style.width = pctL + '%';
 
-        document.getElementById('flavioPct').innerHTML = `${pctF.toFixed(2).replace('.', ',')}<span class="symbol-flavio">%</span>`;
-        document.getElementById('flavioVotes').innerText = vFlavio.toLocaleString('pt-BR') + ' votos';
+        animarElemento('flavioPct', pctF, true, 'symbol-flavio');
+        animarElemento('flavioVotes', vFlavio, false, '', ' votos');
         document.getElementById('flavioBar').style.width = pctF + '%';
 
         const cardLula = document.getElementById('cardLula');
