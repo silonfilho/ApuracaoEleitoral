@@ -35,7 +35,7 @@ function getTseUrl(uf, sulfixo = 'e006258') {
 }
 
 /**
- * Requisição segura via módulo nativo 'https' do Node.js (Compatível com qualquer versão do Node)
+ * Requisição segura via módulo nativo 'https' do Node.js
  */
 function requestHttps(url) {
     return new Promise((resolve, reject) => {
@@ -69,10 +69,8 @@ function requestHttps(url) {
  */
 async function fetchTseData(uf) {
     try {
-        // Tenta primeiro com 2 zeros (padrão 4 dígitos: e006258)
         return await requestHttps(getTseUrl(uf, 'e006258'));
     } catch (err) {
-        // Se falhar, tenta fallback com 3 zeros (padrão 3 dígitos: e0006258)
         return await requestHttps(getTseUrl(uf, 'e0006258'));
     }
 }
@@ -108,8 +106,6 @@ async function pollEstados() {
         try {
             const dataUF = await fetchTseData(uf);
             cacheEleicao.estados[uf] = dataUF;
-            
-            // Pausa de 150ms entre estados para evitar rate-limiting
             await new Promise(resolve => setTimeout(resolve, 150));
         } catch (err) {
             // Mantém dados anteriores da UF em cache se a chamada falhar
@@ -150,8 +146,8 @@ app.get('/api/dados/:uf', (req, res) => {
     return res.status(404).json({ error: `Dados para a UF ${ufParam} ainda não disponíveis em cache` });
 });
 
-// Rota genérica para servir a SPA
-app.get('*', (req, res) => {
+// Rota genérica para servir a SPA (Sintaxe compatível com Express v5+)
+app.get('(.*)', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
