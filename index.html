@@ -354,20 +354,47 @@
         }
     }
 
-    // --- BUSCA DIRETA VIA SERVIDOR LOCAL (RENDER) ---
+    // --- BUSCA MULTI-FONTE EM TEMPO REAL ---
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         
-        try {
-            // Consulta o teu próprio backend no Render
-            const response = await fetch(`/api/dados/${ufLower}`);
-            if (response.ok) {
-                const data = await response.json();
-                if (data) return data;
-            }
-        } catch (err) {
-            console.error(`Erro ao buscar dados de ${ufLower}:`, err);
+        // Lista de caminhos da API do TSE do mais rápido ao mais simplificado
+        const urls = [
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`
+        ];
+
+        for (const url of urls) {
+            try {
+                // 1. Tenta via Proxy para contornar bloqueio de CORS no navegador
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                const res = await fetch(proxyUrl);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.pst || data.pstp || data.cand || data.candidato)) {
+                        return data;
+                    }
+                }
+            } catch (e) {}
+
+            try {
+                // 2. Tenta requisição direta
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.pst || data.pstp || data.cand || data.candidato)) {
+                        return data;
+                    }
+                }
+            } catch (e) {}
         }
+
+        // 3. Fallback: Servidor Backend no Render
+        try {
+            const res = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
+            if (res.ok) return await res.json();
+        } catch (e) {}
 
         return null;
     }
