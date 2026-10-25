@@ -358,21 +358,31 @@
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         
-        // 1. Tenta consultar diretamente no servidor da CDN do TSE
-        const urlDirect1 = `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`;
-        const urlDirect2 = `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`;
+        // 1. Tenta a API direta do TSE (vários sufixos conhecidos)
+        const urls = [
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`
+        ];
 
-        try {
-            let response = await fetch(urlDirect1);
-            if (!response.ok) {
-                response = await fetch(urlDirect2);
-            }
-            if (response.ok) {
-                return await response.json();
-            }
-        } catch (err) {
-            // Se o navegador falhar (ex: política de CORS/rede), prossegue para o fallback
+        for (const url of urls) {
+            try {
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data) return data;
+                }
+            } catch (e) {}
         }
+
+        // 2. Fallback para o teu servidor Render
+        try {
+            const res = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
+            if (res.ok) return await res.json();
+        } catch (e) {}
+
+        return null;
+    }
 
         // 2. Fallback: consulta a API do teu próprio backend no Render
         try {
@@ -476,33 +486,41 @@
     }
 
     function renderizarPainel(data, uf) {
-        let pctApurado = parseFloat((data.pst || "0").replace(',', '.'));
-        document.getElementById('globalPctText').innerText = data.pst + '%';
+        if (!data) return;
+
+        // Suporte aos dois nomes de campo do TSE (pst ou p-pst / psta)
+        let pctApuradoStr = data.pst || data['p-pst'] || data.psta || "0,00";
+        let pctApurado = parseFloat(pctApuradoStr.toString().replace(',', '.'));
+
+        document.getElementById('globalPctText').innerText = pctApuradoStr + '%';
         document.getElementById('globalProgressBar').style.width = pctApurado + '%';
 
         if (pctApurado >= 100) {
             document.getElementById('lastUpdateClock').innerText = "100% · CONCLUÍDO";
         } else {
-            document.getElementById('lastUpdateClock').innerText = (data && data.hg) ? data.hg : '--:--:--';
+            document.getElementById('lastUpdateClock').innerText = (data.hg || data.ht || '--:--:--');
         }
 
         let vLula = 0, vFlavio = 0, pctL = 0, pctF = 0;
 
-        if (data && data.cand) {
-            data.cand.forEach(c => {
-                let nomeNorm = normalizarTexto(c.nm);
-                let numCand = c.n || '';
+        // Lista de candidatos flexível (cand ou candidato)
+        const listaCand = data.cand || data.candidato || [];
 
-                if (numCand === '13' || nomeNorm.includes('lula')) {
-                    vLula = parseInt(c.vap || 0);
-                    pctL = parseFloat((c.pvap || "0").replace(',', '.'));
-                } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
-                    vFlavio = parseInt(c.vap || 0);
-                    pctF = parseFloat((c.pvap || "0").replace(',', '.'));
-                }
-            });
-        }
+        listaCand.forEach(c => {
+            let nomeNorm = normalizarTexto(c.nm || c.nmu || '');
+            let numCand = (c.n || c.sqcand || '').toString().trim();
 
+            // Verificação por Número (13 Lula / 22 Flávio) ou por Nome
+            if (numCand === '13' || nomeNorm.includes('lula')) {
+                vLula = parseInt(c.vap || c.v || 0, 10);
+                pctL = parseFloat((c.pvap || c.pv || "0").toString().replace(',', '.'));
+            } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
+                vFlavio = parseInt(c.vap || c.v || 0, 10);
+                pctF = parseFloat((c.pvap || c.pv || "0").toString().replace(',', '.'));
+            }
+        });
+
+        // Animação e Exibição nos Cards
         animarElemento('lulaPct', pctL, true, 'symbol-lula');
         animarElemento('lulaVotes', vLula, false, '', ' votos');
         document.getElementById('lulaBar').style.width = pctL + '%';
@@ -528,17 +546,6 @@
             cardLula.className = "duel-card order-second";
         }
 
-        if (eleitoNacional === 'lula') {
-            cardLula.classList.add('eleito');
-            cardFlavio.classList.remove('eleito');
-        } else if (eleitoNacional === 'flavio') {
-            cardFlavio.classList.add('eleito');
-            cardLula.classList.remove('eleito');
-        } else {
-            cardLula.classList.remove('eleito');
-            cardFlavio.classList.remove('eleito');
-        }
-
         let diferencaVotos = Math.abs(vLula - vFlavio);
 
         if (uf === 'br') {
@@ -546,50 +553,29 @@
             bannerLabel.innerText = "PRESIDENTE · BRASIL";
             bannerPill.innerText = "2º Turno";
 
-            if (eleitoNacional === 'lula') {
-                headline.innerHTML = `<span class="winner">Lula</span> eleito Presidente da República`;
-                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
-            } else if (eleitoNacional === 'flavio') {
-                headline.innerHTML = `<span class="winner">Flávio Bolsonaro</span> eleito Presidente da República`;
-                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
+            if (vLula === 0 && vFlavio === 0) {
+                headline.innerHTML = `Processando apuração oficial...`;
             } else {
                 headline.innerHTML = `Disputa no 2º turno: <strong class="lula">Lula</strong> e <strong class="flavio">Flávio Bolsonaro</strong>`;
-                document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
             }
+            document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
         } else {
             let nomeEstado = nomesEstados[uf] || uf.toUpperCase();
             let siglaUF = uf.toUpperCase();
             let prep = preposicaoUF[uf] || 'em ';
             let localFormatado = prep + nomeEstado;
-            let siglaFormatada = prep + siglaUF;
 
+            banner.className = "state-banner-highlight";
+            bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
+            
             if (vLula > vFlavio) {
                 let pctLFormatted = pctL.toFixed(2).replace('.', ',');
-                banner.className = "state-banner-highlight leader-lula";
-                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
-                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
-
-                if (pctApurado >= 100) {
-                    headline.innerHTML = `<strong class="lula">Lula</strong> venceu ${localFormatado} com ${pctLFormatted}%`;
-                } else {
-                    headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctLFormatted}%`;
-                }
+                headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctLFormatted}%`;
             } else if (vFlavio > vLula) {
                 let pctFFormatted = pctF.toFixed(2).replace('.', ',');
-                banner.className = "state-banner-highlight leader-flavio";
-                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
-                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
-
-                if (pctApurado >= 100) {
-                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> venceu ${localFormatado} com ${pctFFormatted}%`;
-                } else {
-                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctFFormatted}%`;
-                }
+                headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctFFormatted}%`;
             } else {
-                banner.className = "state-banner-highlight";
-                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
-                bannerPill.innerText = "Indefinido";
-                headline.innerHTML = `Empate temporário ${localFormatado}`;
+                headline.innerHTML = `Aguardando apuração ${localFormatado}`;
             }
 
             document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
@@ -597,10 +583,11 @@
 
         document.getElementById('secoesText').innerText = `${pctApurado.toFixed(2).replace('.', ',')}% apurado`;
 
-        document.getElementById('votosValidosText').innerText = parseInt(data.vvc || 0).toLocaleString('pt-BR');
-        document.getElementById('abstencoesText').innerText = parseInt(data.a || 0).toLocaleString('pt-BR');
-        document.getElementById('brancosText').innerText = parseInt(data.vb || 0).toLocaleString('pt-BR');
-        document.getElementById('nulosText').innerText = parseInt(data.tvn || 0).toLocaleString('pt-BR');
+        // Estatísticas Complementares
+        document.getElementById('votosValidosText').innerText = parseInt(data.vvc || data.v | 0, 10).toLocaleString('pt-BR');
+        document.getElementById('abstencoesText').innerText = parseInt(data.a || 0, 10).toLocaleString('pt-BR');
+        document.getElementById('brancosText').innerText = parseInt(data.vb || 0, 10).toLocaleString('pt-BR');
+        document.getElementById('nulosText').innerText = parseInt(data.tvn || data.vn || 0, 10).toLocaleString('pt-BR');
     }
 
     function alterarUF() {
