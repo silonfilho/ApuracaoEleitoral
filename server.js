@@ -120,10 +120,19 @@ async function atualizarDadosUF(uf) {
     }
 }
 
-// Atualização recorrente do Brasil (principal) a cada 3 segundos
+// 1. Atualização recorrente do Brasil (principal) a cada 3 segundos em background
 setInterval(() => {
     atualizarDadosUF('br');
 }, 3000);
+
+// 2. Atualização automática dos 27 estados a cada 15 segundos em background
+UFS_VALIDAS.forEach(uf => {
+    if (uf !== 'br') {
+        setInterval(() => {
+            atualizarDadosUF(uf);
+        }, 15000);
+    }
+});
 
 // Endpoint de Health Check
 app.get('/health', (req, res) => {
@@ -147,8 +156,8 @@ app.get('/api/tse/historico/:uf', (req, res) => {
     res.json(historicoGraficoUF[uf]);
 });
 
-// Endpoint dinâmico que atende 'br' e qualquer UF
-app.get('/api/tse/:uf', async (req, res) => {
+// Endpoint dinâmico ultra-rápido: Apenas entrega o cache sem fazer requisição de rede imediata
+app.get('/api/tse/:uf', (req, res) => {
     const uf = req.params.uf.toLowerCase();
 
     if (uf === 'historico') {
@@ -159,11 +168,7 @@ app.get('/api/tse/:uf', async (req, res) => {
         return res.status(400).json({ error: "UF informada é inválida." });
     }
 
-    // Se a requisição for para um estado e os dados ainda não foram atualizados nos últimos segundos, atualiza sob demanda
-    if (uf !== 'br') {
-        await atualizarDadosUF(uf);
-    }
-
+    // Resposta instantânea da memória
     res.json(cacheDadosUF[uf]);
 });
 
