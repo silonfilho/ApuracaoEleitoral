@@ -130,7 +130,7 @@
             </div>
         </div>
 
-        <!-- RODAPÉ ULTRADISCRETO -->
+        <!-- RODAPÉ -->
         <footer class="app-footer-subtle">
             <span>Painel de Apuração de Votos &bull; Fonte: Tribunal Superior Eleitoral (TSE) &bull; &copy; 2026 Desenvolvido por Silon Filho</span>
         </footer>
@@ -322,12 +322,12 @@
         }
     });
 
-    // --- FUNÇÃO DE BUSCA HÍBRIDA (BACKEND PRIMÁRIO + PROXIES SECUNDÁRIOS) ---
+    // --- FUNÇÃO DE BUSCA ULTRA CORRIGIDA COM CAMINHOS OFICIAIS EXATOS ---
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         const ts = Date.now();
 
-        // 1. Tenta consulta ao backend Node.js no Render
+        // 1. Tenta consulta via Backend local do Render
         try {
             const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
             if (res.ok) {
@@ -336,16 +336,27 @@
             }
         } catch (e) {}
 
-        // 2. Fallbacks com Proxies
+        // 2. URLs Oficiais com o ID de Eleição /6258/ em todas elas
         const targetUrls = [
             `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json?cb=${ts}`
         ];
 
         for (const url of targetUrls) {
+            // Tenta via Proxy AllOrigins
             try {
                 const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
                 const res = await fetch(proxyUrl);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
+                }
+            } catch (e) {}
+
+            // Tenta Direto
+            try {
+                const res = await fetch(url);
                 if (res.ok) {
                     const data = await res.json();
                     if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
@@ -451,11 +462,7 @@
         let diferencaVotos = Math.abs(vLula - vFlavio);
 
         if (uf === 'br') {
-            if (vLula === 0 && vFlavio === 0) {
-                headline.innerHTML = `Processando apuração oficial...`;
-            } else {
-                headline.innerHTML = `Disputa no 2º turno: <strong class="lula">Lula</strong> e <strong class="flavio">Flávio Bolsonaro</strong>`;
-            }
+            headline.innerHTML = `Disputa no 2º turno: <strong class="lula">Lula</strong> e <strong class="flavio">Flávio Bolsonaro</strong>`;
             document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
         } else {
             let nomeEstado = nomesEstados[uf] || uf.toUpperCase();
@@ -466,6 +473,8 @@
                 headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctL.toFixed(2).replace('.', ',')}%`;
             } else if (vFlavio > vLula) {
                 headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctF.toFixed(2).replace('.', ',')}%`;
+            } else {
+                headline.innerHTML = `Aguardando apuração ${localFormatado}`;
             }
             document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
         }
