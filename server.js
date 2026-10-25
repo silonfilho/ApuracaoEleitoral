@@ -7,152 +7,84 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-
-// Servir ficheiros estáticos a partir da raiz do projeto (onde está o index.html)
 app.use(express.static(path.join(__dirname)));
 
-// Estado e Cache dos Dados da Eleição
+// Cache interno
 let cacheEleicao = {
     nacional: null,
     estados: {},
     ultimaAtualizacao: null
 };
 
-let falhasConsecutivas = 0;
-const LIMITE_ALERTA_FALHAS = 3;
-
-// Lista de UFs do Brasil
-const UFS = [
-    'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-    'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN',
-    'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO', 'ZZ'
-];
-
 /**
- * Gerador de URL Oficial do TSE por UF (2º Turno 2026 - Código 6258)
+ * Função para fazer requisições HTTPs nativas ao TSE ignorando bloqueios de CORS do navegador
  */
-function getTseUrl(uf, sulfixo = 'e006258') {
-    const ufLower = uf.toLowerCase();
-    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-${sulfixo}-r.json`;
-}
-
-/**
- * Requisição segura via módulo nativo 'https' do Node.js
- */
-function requestHttps(url) {
+function fetchJsonTse(url) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, {
+        const options = {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*'
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
             }
-        }, (res) => {
+        };
+
+        https.get(url, options, (res) => {
             if (res.statusCode < 200 || res.statusCode >= 300) {
-                return reject(new Error(`Erro HTTP TSE: ${res.statusCode}`));
+                return reject(new Error(`Erro HTTP: ${res.statusCode}`));
             }
-            let body = '';
-            res.on('data', chunk => body += chunk);
+            let data = '';
+            res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 try {
-                    resolve(JSON.parse(body));
+                    resolve(JSON.parse(data));
                 } catch (e) {
-                    reject(new Error('Erro ao converter JSON do TSE'));
+                    reject(e);
                 }
             });
-        });
-
-        req.on('error', (err) => reject(err));
-        req.end();
+        }).on('error', reject);
     });
 }
 
 /**
- * Procura dados no TSE com fallback automático de formato de zeros (e006258 / e0006258)
+ * Busca dados com suporte aos múltiplos padrões de URL do TSE
  */
-async function fetchTseData(uf) {
-    try {
-        return await requestHttps(getTseUrl(uf, 'e006258'));
-    } catch (err) {
-        return await requestHttps(getTseUrl(uf, 'e0006258'));
-    }
-}
+async function obterDadosTse(uf) {
+    const ufLower = uf.toLowerCase();
+    const urls = [
+        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`,
+        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`,
+        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`
+    ];
 
-/**
- * Polling Nacional (Executado a cada 3 segundos)
- */
-async function pollNacional() {
-    try {
-        const dataBR = await fetchTseData('br');
-
-        cacheEleicao.nacional = dataBR;
-        cacheEleicao.ultimaAtualizacao = new Date().toISOString();
-        
-        if (falhasConsecutivas > 0) {
-            console.log(' [SUCESSO TSE] Conexão reestabelecida com o feed oficial!');
-            falhasConsecutivas = 0;
-        }
-    } catch (err) {
-        falhasConsecutivas++;
-        console.warn(`[AVISO TSE - BR] Falha ao ligar ao TSE (Tentativa ${falhasConsecutivas}). Mantendo dados em cache.`);
-        if (falhasConsecutivas >= LIMITE_ALERTA_FALHAS) {
-            console.error(`[ALERTA CRÍTICO] O feed oficial do TSE falhou ${falhasConsecutivas} vezes seguidas.`);
-        }
-    }
-}
-
-/**
- * Polling dos Estados (Executado de forma escalonada a cada 15 segundos)
- */
-async function pollEstados() {
-    for (const uf of UFS) {
+    for (const url of urls) {
         try {
-            const dataUF = await fetchTseData(uf);
-            cacheEleicao.estados[uf] = dataUF;
-            await new Promise(resolve => setTimeout(resolve, 150));
-        } catch (err) {
-            // Mantém dados anteriores da UF em cache se a chamada falhar
-        }
+            const data = await fetchJsonTse(url);
+            if (data) return data;
+        } catch (err) {}
     }
+    return null;
 }
 
-// Iniciar Loops de Polling
-setInterval(pollNacional, 3000);   // A cada 3 segundos para o Brasil
-setInterval(pollEstados, 15000);   // A cada 15 segundos para os Estados
-
-// Primeira execução ao iniciar o servidor
-pollNacional();
-pollEstados();
-
-// --- ROTAS DA API INTERNA ---
-
-app.get('/api/dados', (req, res) => {
-    res.json({
-        nacional: cacheEleicao.nacional,
-        estados: cacheEleicao.estados,
-        ultimaAtualizacao: cacheEleicao.ultimaAtualizacao,
-        statusFeed: falhasConsecutivas < LIMITE_ALERTA_FALHAS ? 'ONLINE' : 'OFFLINE'
-    });
+// Rota de API do Backend para o Frontend consultar
+app.get('/api/dados/:uf', async (req, res) => {
+    const uf = req.params.uf.toLowerCase();
+    try {
+        const dados = await obterDadosTse(uf);
+        if (dados) {
+            return res.json(dados);
+        }
+        res.status(404).json({ error: 'Dados não encontrados no TSE' });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao consultar o TSE' });
+    }
 });
 
-app.get('/api/dados/:uf', (req, res) => {
-    const ufParam = req.params.uf.toUpperCase();
-    
-    if (ufParam === 'BR') {
-        return res.json(cacheEleicao.nacional || { error: 'Dados nacionais ainda não carregados' });
-    }
-
-    if (cacheEleicao.estados[ufParam]) {
-        return res.json(cacheEleicao.estados[ufParam]);
-    }
-
-    return res.status(404).json({ error: `Dados para a UF ${ufParam} ainda não disponíveis em cache` });
-});
-
-// Servir o index.html localizado na raiz do projeto
+// Servir a SPA na raiz
 app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
-    console.log(` Servidor de Apuração Ativo na porta ${PORT}`);
+    console.log(`Servidor ativo na porta ${PORT}`);
 });
