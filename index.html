@@ -324,48 +324,32 @@
 
     // --- FUNÇÃO DE BUSCA ULTRA CORRIGIDA COM CAMINHOS OFICIAIS EXATOS ---
     async function buscarDadosTSE(uf = 'br') {
-        const ufLower = uf.toLowerCase();
-        const ts = Date.now();
+    const ufLower = uf.toLowerCase();
+    const ts = Date.now();
 
-        // 1. Tenta consulta via Backend local do Render
-        try {
-            const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
-            }
-        } catch (e) {}
-
-        // 2. URLs Oficiais com o ID de Eleição /6258/ em todas elas
-        const targetUrls = [
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json?cb=${ts}`
-        ];
-
-        for (const url of targetUrls) {
-            // Tenta via Proxy AllOrigins
-            try {
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                const res = await fetch(proxyUrl);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
-                }
-            } catch (e) {}
-
-            // Tenta Direto
-            try {
-                const res = await fetch(url);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
-                }
-            } catch (e) {}
+    // 1. Tenta via backend local do Render
+    try {
+        const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
         }
+    } catch (e) {}
 
-        return null;
-    }
+    // 2. Fallback direto com a URL correta -u.json
+    const urlOficial = `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-u.json?cb=${ts}`;
+    
+    try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlOficial)}`;
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
+        }
+    } catch (e) {}
+
+    return null;
+}
 
     let isUpdating = false;
     let eleitoNacional = null;
