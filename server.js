@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.static(path.join(__dirname)));
 
 /**
- * Consulta de baixa latência ao servidor CDN do TSE com cabeçalhos oficiais
+ * Consulta aos ficheiros da CDN do TSE com cabeçalhos oficiais
  */
 function fetchJsonTse(url) {
     return new Promise((resolve, reject) => {
@@ -18,12 +18,13 @@ function fetchJsonTse(url) {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Cache-Control': 'no-cache'
             }
         };
 
         https.get(url, options, (res) => {
+            console.log(`[TSE Response] URL: ${url} | Status: ${res.statusCode}`);
+            
             if (res.statusCode < 200 || res.statusCode >= 300) {
                 return reject(new Error(`HTTP ${res.statusCode}`));
             }
@@ -36,16 +37,20 @@ function fetchJsonTse(url) {
                     reject(e);
                 }
             });
-        }).on('error', reject);
+        }).on('error', (err) => {
+            console.error(`[HTTPS Error]:`, err.message);
+            reject(err);
+        });
     });
 }
 
 /**
- * Rota com suporte às diferentes nomenclaturas e arquivos do TSE
+ * Rota de dados com busca sequencial pelos caminhos do TSE
  */
 async function obterDadosTse(uf) {
     const ufLower = uf.toLowerCase();
     const ts = Date.now();
+    
     const urls = [
         `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`,
         `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`,
@@ -54,18 +59,23 @@ async function obterDadosTse(uf) {
 
     for (const url of urls) {
         try {
+            console.log(`[Backend Requisição] Tentando: ${url}`);
             const data = await fetchJsonTse(url);
             if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
+                console.log(`[Sucesso TSE] Dados validados recebidos de: ${url}`);
                 return data;
             }
-        } catch (err) {}
+        } catch (err) {
+            console.log(`[Falha URL] ${url}: ${err.message}`);
+        }
     }
     return null;
 }
 
-// Endpoint do servidor proxy interno
+// Endpoint consumido pelo frontend
 app.get('/api/dados/:uf', async (req, res) => {
     const uf = req.params.uf.toLowerCase();
+    console.log(`[API Request] Recebido pedido para UF: ${uf}`);
     try {
         const dados = await obterDadosTse(uf);
         if (dados) {
@@ -73,7 +83,7 @@ app.get('/api/dados/:uf', async (req, res) => {
         }
         res.status(404).json({ error: 'Aguardando publicação do TSE' });
     } catch (error) {
-        res.status(500).json({ error: 'Erro ao conectar ao TSE' });
+        res.status(500).json({ error: 'Erro de comunicação backend' });
     }
 });
 
