@@ -229,7 +229,8 @@
     let layersByUF = {};
     let ufHoverAtiva = null;
 
-    fetch('https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson')
+    // Carregamento GeoJSON Local (protegido contra quedas do GitHub)
+    fetch('./brazil-states.geojson')
         .then(res => res.json())
         .then(geoData => {
             geojsonLayer = L.geoJson(geoData, {
