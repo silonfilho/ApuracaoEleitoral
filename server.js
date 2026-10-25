@@ -18,7 +18,7 @@ const UFS_VALIDAS = [
 // Gerador de URL Oficial do TSE por UF
 function getTseUrl(uf) {
     const ufLower = uf.toLowerCase();
-    return `https://resultados.tse.jus.br/oficial/ele2026/545/dados-simplificados/${ufLower}/${ufLower}-c0001-e000545-r.json`;
+    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`;
 }
 
 // Controladores de estado e resiliência
