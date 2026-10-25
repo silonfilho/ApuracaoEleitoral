@@ -1,181 +1,150 @@
 const express = require('express');
-const axios = require('axios');
 const cors = require('cors');
+const path = require('path');
 
-const app = express(); 
-app.use(express.static(__dirname));
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Lista de UFs válidas no Brasil
-const UFS_VALIDAS = [
-    'br', 'ac', 'al', 'ap', 'am', 'ba', 'ce', 'df', 'es', 'go', 
-    'ma', 'mt', 'ms', 'mg', 'pa', 'pb', 'pr', 'pe', 'pi', 'rj', 
-    'rn', 'rs', 'ro', 'rr', 'sc', 'sp', 'se', 'to'
-];
+// Estado e Cache dos Dados da Eleição
+let cacheEleicao = {
+    nacional: null,
+    estados: {},
+    ultimaAtualizacao: null
+};
 
-// Gerador de URL Oficial do TSE por UF (2º Turno 2026 - Código 6258)
-function getTseUrl(uf) {
-    const ufLower = uf.toLowerCase();
-    
-    // Tente este formato oficial com a pasta /dados/
-    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`;
-}
-
-// Controladores de estado e resiliência
 let falhasConsecutivas = 0;
 const LIMITE_ALERTA_FALHAS = 3;
 
-// Estrutura de Cache em Memória por UF
-const cacheDadosUF = {};
-const historicoGraficoUF = {};
+// Lista de UFs do Brasil
+const UFS = [
+    'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+    'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN',
+    'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO', 'ZZ'
+];
 
-// Inicializa a estrutura de cache para todas as UFs válidas
-UFS_VALIDAS.forEach(uf => {
-    cacheDadosUF[uf] = {
-        pst: "0,00",
-        hg: "--:--:--",
-        vvc: "0",
-        a: "0",
-        vb: "0",
-        tvn: "0",
-        cand: [
-            { nm: 'LULA', n: '13', vap: '0', pvap: '0,00' },
-            { nm: 'FLÁVIO BOLSONARO', n: '22', vap: '0', pvap: '0,00' }
-        ]
-    };
-
-    historicoGraficoUF[uf] = {
-        labels: [],
-        lula: [],
-        flavio: []
-    };
-});
-
-// Função auxiliar para normalizar texto
-function normalizarTexto(txt) {
-    return (txt || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+/**
+ * Gerador de URL Oficial do TSE por UF (2º Turno 2026 - Código 6258)
+ */
+function getTseUrl(uf) {
+    const ufLower = uf.toLowerCase();
+    // Estrutura padrão da API simplificada: código de eleição com 6 dígitos (e006258)
+    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`;
 }
 
-// Função genérica para buscar e atualizar dados no TSE para uma determinada UF
-async function atualizarDadosUF(uf) {
-    try {
-        const url = getTseUrl(uf);
-        const response = await axios.get(url, { timeout: 3000 });
-        
-        if (response.data) {
-            if (uf === 'br') falhasConsecutivas = 0; // Reseta falhas se a chamada principal (BR) funcionar
-            const data = response.data;
-            
-            cacheDadosUF[uf] = {
-                pst: data.pst || "0,00",
-                hg: data.hg || new Date().toTimeString().split(' ')[0],
-                vvc: data.vvc || "0",
-                a: data.a || "0",
-                vb: data.vb || "0",
-                tvn: data.tvn || "0",
-                cand: (data.cand || []).map(c => ({
-                    nm: (c.nm || '').toUpperCase(),
-                    n: c.n || '',
-                    vap: c.vap || '0',
-                    pvap: c.pvap || '0,00'
-                }))
-            };
+/**
+ * Função utilitária para fazer requisições ao TSE com User-Agent
+ */
+async function fetchTseData(url) {
+    const response = await fetch(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*'
+        }
+    });
 
-            let pctLula = 0;
-            let pctFlavio = 0;
-
-            cacheDadosUF[uf].cand.forEach(c => {
-                let nomeNorm = normalizarTexto(c.nm);
-                let numCand = c.n || '';
-                if (numCand === '13' || nomeNorm.includes('lula')) {
-                    pctLula = parseFloat((c.pvap || "0").replace(',', '.'));
-                } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
-                    pctFlavio = parseFloat((c.pvap || "0").replace(',', '.'));
+    if (!response.ok) {
+        // Tenta fallback com 3 zeros se a URL padrão com 2 zeros falhar
+        if (response.status === 404 && url.includes('e006258')) {
+            const urlFallback = url.replace('e006258', 'e0006258');
+            const resFallback = await fetch(urlFallback, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/json'
                 }
             });
-
-            const horaAtual = cacheDadosUF[uf].hg;
-            const pctApurado = parseFloat((cacheDadosUF[uf].pst || "0").replace(',', '.'));
-
-            if (pctApurado > 0 && !historicoGraficoUF[uf].labels.includes(horaAtual)) {
-                if (historicoGraficoUF[uf].labels.length >= 200) {
-                    historicoGraficoUF[uf].labels.shift();
-                    historicoGraficoUF[uf].lula.shift();
-                    historicoGraficoUF[uf].flavio.shift();
-                }
-                historicoGraficoUF[uf].labels.push(horaAtual);
-                historicoGraficoUF[uf].lula.push(pctLula);
-                historicoGraficoUF[uf].flavio.push(pctFlavio);
+            if (resFallback.ok) {
+                return await resFallback.json();
             }
         }
-    } catch (error) {
-        if (uf === 'br') {
-            falhasConsecutivas++;
-            console.warn(`[AVISO TSE - BR] Falha ao ligar ao TSE (Tentativa ${falhasConsecutivas}). Mantendo dados em cache.`);
+        throw new Error(`Erro HTTP TSE: ${response.status}`);
+    }
 
-            if (falhasConsecutivas >= LIMITE_ALERTA_FALHAS) {
-                console.error(`[ALERTA CRÍTICO] O feed oficial do TSE falhou ${falhasConsecutivas} vezes seguidas.`);
-            }
+    return await response.json();
+}
+
+/**
+ * Polling Nacional (Executado a cada 3 segundos)
+ */
+async function pollNacional() {
+    try {
+        const urlBR = getTseUrl('br');
+        const dataBR = await fetchTseData(urlBR);
+
+        cacheEleicao.nacional = dataBR;
+        cacheEleicao.ultimaAtualizacao = new Date().toISOString();
+        
+        if (falhasConsecutivas > 0) {
+            console.log(' [SUCESSO TSE] Conexão reestabelecida com o feed oficial!');
+            falhasConsecutivas = 0;
+        }
+    } catch (err) {
+        falhasConsecutivas++;
+        console.warn(`[AVISO TSE - BR] Falha ao ligar ao TSE (Tentativa ${falhasConsecutivas}). Mantendo dados em cache.`);
+        if (falhasConsecutivas >= LIMITE_ALERTA_FALHAS) {
+            console.error(`[ALERTA CRÍTICO] O feed oficial do TSE falhou ${falhasConsecutivas} vezes seguidas.`);
         }
     }
 }
 
-// 1. Atualização recorrente do Brasil (principal) a cada 3 segundos em background
-setInterval(() => {
-    atualizarDadosUF('br');
-}, 3000);
+/**
+ * Polling dos Estados (Executado de forma escalonada a cada 15 segundos)
+ */
+async function pollEstados() {
+    for (const uf of UFS) {
+        try {
+            const urlUF = getTseUrl(uf);
+            const dataUF = await fetchTseData(urlUF);
+            cacheEleicao.estados[uf] = dataUF;
+            
+            // Intervalo de 200ms entre estados para evitar bloqueios de taxa (rate limiting)
+            await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (err) {
+            // Falha silenciosa para manter dados anteriores da UF em cache
+        }
+    }
+}
 
-// 2. Atualização dos 27 estados com STAGGERING (Descompasso de 500ms entre cada estado)
-// Isso distribui as requisições uniformemente ao longo dos 15s sem picos de CPU/Rede
-const estadosApenas = UFS_VALIDAS.filter(uf => uf !== 'br');
-estadosApenas.forEach((uf, index) => {
-    setTimeout(() => {
-        atualizarDadosUF(uf); // Primeira chamada descompassada
-        setInterval(() => {
-            atualizarDadosUF(uf);
-        }, 15000); // Repete a cada 15s a partir daquele ponto
-    }, index * 500);
-});
+// Iniciar Loops de Polling
+setInterval(pollNacional, 3000);   // Cada 3 segundos para o Brasil
+setInterval(pollEstados, 15000);   // Cada 15 segundos para os Estados
 
-// Endpoint de Health Check
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'online',
-        ultimaAtualizacaoTSE: cacheDadosUF['br'].hg,
-        falhasConsecutivasTSE: falhasConsecutivas,
-        servidorAtivoDesde: new Date().toISOString()
+// Primeira execução imediata ao iniciar o servidor
+pollNacional();
+pollEstados();
+
+// --- ROTAS DA API INTERNA ---
+
+app.get('/api/dados', (req, res) => {
+    res.json({
+        nacional: cacheEleicao.nacional,
+        estados: cacheEleicao.estados,
+        ultimaAtualizacao: cacheEleicao.ultimaAtualizacao,
+        statusFeed: falhasConsecutivas < LIMITE_ALERTA_FALHAS ? 'ONLINE' : 'OFFLINE'
     });
 });
 
-app.get('/api/tse/historico', (req, res) => {
-    res.json(historicoGraficoUF['br']);
+app.get('/api/dados/:uf', (req, res) => {
+    const ufParam = req.params.uf.toUpperCase();
+    
+    if (ufParam === 'BR') {
+        return res.json(cacheEleicao.nacional || { error: 'Dados nacionais ainda não carregados' });
+    }
+
+    if (cacheEleicao.estados[ufParam]) {
+        return res.json(cacheEleicao.estados[ufParam]);
+    }
+
+    return res.status(404).json({ error: `Dados para a UF ${ufParam} ainda não disponíveis em cache` });
 });
 
-app.get('/api/tse/historico/:uf', (req, res) => {
-    const uf = req.params.uf.toLowerCase();
-    if (!UFS_VALIDAS.includes(uf)) {
-        return res.status(400).json({ error: "UF inválida." });
-    }
-    res.json(historicoGraficoUF[uf]);
-});
-
-// Endpoint dinâmico ultra-rápido: Apenas entrega o cache da memória
-app.get('/api/tse/:uf', (req, res) => {
-    const uf = req.params.uf.toLowerCase();
-
-    if (uf === 'historico') {
-        return res.json(historicoGraficoUF['br']);
-    }
-
-    if (!UFS_VALIDAS.includes(uf)) {
-        return res.status(400).json({ error: "UF informada é inválida." });
-    }
-
-    res.json(cacheDadosUF[uf]);
+// Rota genérica para servir a SPA
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
-    console.log(`[SERVER PRODUÇÃO] Servidor ativo em http://localhost:${PORT}`);
+    console.log(` Servidor de Apuração Ativo na porta ${PORT}`);
 });
