@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,41 +29,52 @@ const UFS = [
 /**
  * Gerador de URL Oficial do TSE por UF (2º Turno 2026 - Código 6258)
  */
-function getTseUrl(uf) {
+function getTseUrl(uf, sulfixo = 'e006258') {
     const ufLower = uf.toLowerCase();
-    // Estrutura padrão da API simplificada: código de eleição com 6 dígitos (e006258)
-    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`;
+    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-${sulfixo}-r.json`;
 }
 
 /**
- * Função utilitária para fazer requisições ao TSE com User-Agent
+ * Requisição segura via módulo nativo 'https' do Node.js (Compatível com qualquer versão do Node)
  */
-async function fetchTseData(url) {
-    const response = await fetch(url, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*'
-        }
-    });
-
-    if (!response.ok) {
-        // Tenta fallback com 3 zeros se a URL padrão com 2 zeros falhar
-        if (response.status === 404 && url.includes('e006258')) {
-            const urlFallback = url.replace('e006258', 'e0006258');
-            const resFallback = await fetch(urlFallback, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'application/json'
+function requestHttps(url) {
+    return new Promise((resolve, reject) => {
+        const req = https.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*'
+            }
+        }, (res) => {
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+                return reject(new Error(`Erro HTTP TSE: ${res.statusCode}`));
+            }
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(body));
+                } catch (e) {
+                    reject(new Error('Erro ao converter JSON do TSE'));
                 }
             });
-            if (resFallback.ok) {
-                return await resFallback.json();
-            }
-        }
-        throw new Error(`Erro HTTP TSE: ${response.status}`);
-    }
+        });
 
-    return await response.json();
+        req.on('error', (err) => reject(err));
+        req.end();
+    });
+}
+
+/**
+ * Procura dados no TSE com fallback automático de formato de zeros (e006258 / e0006258)
+ */
+async function fetchTseData(uf) {
+    try {
+        // Tenta primeiro com 2 zeros (padrão 4 dígitos: e006258)
+        return await requestHttps(getTseUrl(uf, 'e006258'));
+    } catch (err) {
+        // Se falhar, tenta fallback com 3 zeros (padrão 3 dígitos: e0006258)
+        return await requestHttps(getTseUrl(uf, 'e0006258'));
+    }
 }
 
 /**
@@ -70,8 +82,7 @@ async function fetchTseData(url) {
  */
 async function pollNacional() {
     try {
-        const urlBR = getTseUrl('br');
-        const dataBR = await fetchTseData(urlBR);
+        const dataBR = await fetchTseData('br');
 
         cacheEleicao.nacional = dataBR;
         cacheEleicao.ultimaAtualizacao = new Date().toISOString();
@@ -95,23 +106,22 @@ async function pollNacional() {
 async function pollEstados() {
     for (const uf of UFS) {
         try {
-            const urlUF = getTseUrl(uf);
-            const dataUF = await fetchTseData(urlUF);
+            const dataUF = await fetchTseData(uf);
             cacheEleicao.estados[uf] = dataUF;
             
-            // Intervalo de 200ms entre estados para evitar bloqueios de taxa (rate limiting)
-            await new Promise(resolve => setTimeout(resolve, 200));
+            // Pausa de 150ms entre estados para evitar rate-limiting
+            await new Promise(resolve => setTimeout(resolve, 150));
         } catch (err) {
-            // Falha silenciosa para manter dados anteriores da UF em cache
+            // Mantém dados anteriores da UF em cache se a chamada falhar
         }
     }
 }
 
 // Iniciar Loops de Polling
-setInterval(pollNacional, 3000);   // Cada 3 segundos para o Brasil
-setInterval(pollEstados, 15000);   // Cada 15 segundos para os Estados
+setInterval(pollNacional, 3000);   // A cada 3 segundos para o Brasil
+setInterval(pollEstados, 15000);   // A cada 15 segundos para os Estados
 
-// Primeira execução imediata ao iniciar o servidor
+// Primeira execução ao iniciar o servidor
 pollNacional();
 pollEstados();
 
