@@ -285,6 +285,11 @@ body {
     position: relative;
 }
 
+/* TRANSIÇÃO SUAVE DE COR NOS ESTADOS DO MAPA */
+.leaflet-interactive {
+    transition: fill 0.4s ease, fill-opacity 0.4s ease, stroke 0.3s ease;
+}
+
 .leaflet-control-container .leaflet-routing-container-hide,
 .leaflet-control-zoom, .leaflet-control-attribution {
     display: none !important;
