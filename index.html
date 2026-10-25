@@ -354,15 +354,15 @@
         }
     }
 
-    // --- LÓGICA DE CONSULTA HÍBRIDA (NAVEGADOR + FALLBACK RENDER) ---
+    // --- CONSULTA HÍBRIDA MULTI-ROTA (TSE + FALLBACK RENDER) ---
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         
-        // 1. Tenta a API direta do TSE (vários sufixos conhecidos)
+        // Estrutura completa de URLs da CDN do TSE
         const urls = [
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`,
             `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`
         ];
 
         for (const url of urls) {
@@ -375,7 +375,7 @@
             } catch (e) {}
         }
 
-        // 2. Fallback para o teu servidor Render
+        // Fallback: consulta o teu servidor backend no Render
         try {
             const res = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
             if (res.ok) return await res.json();
@@ -384,35 +384,24 @@
         return null;
     }
 
-        // 2. Fallback: consulta a API do teu próprio backend no Render
-        try {
-            const response = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
-            if (response.ok) {
-                return await response.json();
-            }
-        } catch (err) {
-            console.error(`[Erro na busca de dados para ${ufLower}]`, err);
-        }
-
-        return null;
-    }
-
     async function carregarDadosEstadosParaMapa() {
         for (const uf of UFs) {
             let key = uf.toLowerCase();
             let dataUF = await buscarDadosTSE(key);
-            if (dataUF && dataUF.cand) {
+            if (dataUF) {
                 let vLula = 0, vFlavio = 0;
-                dataUF.cand.forEach(c => {
-                    let nomeNorm = normalizarTexto(c.nm);
-                    let num = c.n || '';
-                    if (num === '13' || nomeNorm.includes('lula')) vLula = parseInt(c.vap || 0);
-                    if (num === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) vFlavio = parseInt(c.vap || 0);
+                const listaCand = dataUF.cand || dataUF.candidato || [];
+                listaCand.forEach(c => {
+                    let nomeNorm = normalizarTexto(c.nm || c.nmu || '');
+                    let num = (c.n || c.sqcand || '').toString().trim();
+                    if (num === '13' || nomeNorm.includes('lula')) vLula = parseInt(c.vap || c.v || 0, 10);
+                    if (num === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) vFlavio = parseInt(c.vap || c.v || 0, 10);
                 });
+                let pctApuradoStr = dataUF.pst || dataUF['p-pst'] || dataUF.psta || "0,00";
                 dadosEstados[key] = {
                     vLula: vLula,
                     vFlavio: vFlavio,
-                    pctApurado: parseFloat((dataUF.pst || "0").replace(',', '.'))
+                    pctApurado: parseFloat(pctApuradoStr.toString().replace(',', '.'))
                 };
             }
         }
@@ -446,27 +435,30 @@
     }
 
     function verificarEleitoNacional(dataBR) {
-        if (!dataBR || !dataBR.cand) return;
+        if (!dataBR) return;
 
-        let pctApuradoBR = parseFloat((dataBR.pst || "0").replace(',', '.'));
+        let pctApuradoStr = dataBR.pst || dataBR['p-pst'] || dataBR.psta || "0,00";
+        let pctApuradoBR = parseFloat(pctApuradoStr.toString().replace(',', '.'));
         let vLulaBR = 0, vFlavioBR = 0;
 
-        dataBR.cand.forEach(c => {
-            let nomeNorm = normalizarTexto(c.nm);
-            let numCand = (c.n || '').toString().trim();
+        const listaCand = dataBR.cand || dataBR.candidato || [];
+
+        listaCand.forEach(c => {
+            let nomeNorm = normalizarTexto(c.nm || c.nmu || '');
+            let numCand = (c.n || c.sqcand || '').toString().trim();
 
             if (numCand === '13' || nomeNorm.includes('lula')) {
-                vLulaBR = parseInt(c.vap || 0, 10);
+                vLulaBR = parseInt(c.vap || c.v || 0, 10);
             }
             if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
-                vFlavioBR = parseInt(c.vap || 0, 10);
+                vFlavioBR = parseInt(c.vap || c.v || 0, 10);
             }
         });
 
-        let vvc = parseInt(dataBR.vvc || 0, 10);
+        let vvc = parseInt(dataBR.vvc || dataBR.v || 0, 10);
         let a = parseInt(dataBR.a || 0, 10);
         let vb = parseInt(dataBR.vb || 0, 10);
-        let tvn = parseInt(dataBR.tvn || 0, 10);
+        let tvn = parseInt(dataBR.tvn || dataBR.vn || 0, 10);
         let totalApuradoMomento = vvc + a + vb + tvn;
 
         if (pctApuradoBR < 80.0) {
@@ -488,7 +480,6 @@
     function renderizarPainel(data, uf) {
         if (!data) return;
 
-        // Suporte aos dois nomes de campo do TSE (pst ou p-pst / psta)
         let pctApuradoStr = data.pst || data['p-pst'] || data.psta || "0,00";
         let pctApurado = parseFloat(pctApuradoStr.toString().replace(',', '.'));
 
@@ -503,14 +494,12 @@
 
         let vLula = 0, vFlavio = 0, pctL = 0, pctF = 0;
 
-        // Lista de candidatos flexível (cand ou candidato)
         const listaCand = data.cand || data.candidato || [];
 
         listaCand.forEach(c => {
             let nomeNorm = normalizarTexto(c.nm || c.nmu || '');
             let numCand = (c.n || c.sqcand || '').toString().trim();
 
-            // Verificação por Número (13 Lula / 22 Flávio) ou por Nome
             if (numCand === '13' || nomeNorm.includes('lula')) {
                 vLula = parseInt(c.vap || c.v || 0, 10);
                 pctL = parseFloat((c.pvap || c.pv || "0").toString().replace(',', '.'));
@@ -520,7 +509,6 @@
             }
         });
 
-        // Animação e Exibição nos Cards
         animarElemento('lulaPct', pctL, true, 'symbol-lula');
         animarElemento('lulaVotes', vLula, false, '', ' votos');
         document.getElementById('lulaBar').style.width = pctL + '%';
@@ -546,6 +534,17 @@
             cardLula.className = "duel-card order-second";
         }
 
+        if (eleitoNacional === 'lula') {
+            cardLula.classList.add('eleito');
+            cardFlavio.classList.remove('eleito');
+        } else if (eleitoNacional === 'flavio') {
+            cardFlavio.classList.add('eleito');
+            cardLula.classList.remove('eleito');
+        } else {
+            cardLula.classList.remove('eleito');
+            cardFlavio.classList.remove('eleito');
+        }
+
         let diferencaVotos = Math.abs(vLula - vFlavio);
 
         if (uf === 'br') {
@@ -553,28 +552,52 @@
             bannerLabel.innerText = "PRESIDENTE · BRASIL";
             bannerPill.innerText = "2º Turno";
 
-            if (vLula === 0 && vFlavio === 0) {
+            if (eleitoNacional === 'lula') {
+                headline.innerHTML = `<span class="winner">Lula</span> eleito Presidente da República`;
+                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
+            } else if (eleitoNacional === 'flavio') {
+                headline.innerHTML = `<span class="winner">Flávio Bolsonaro</span> eleito Presidente da República`;
+                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
+            } else if (vLula === 0 && vFlavio === 0) {
                 headline.innerHTML = `Processando apuração oficial...`;
+                document.getElementById('diffText').innerText = `Diferença: 0 votos`;
             } else {
                 headline.innerHTML = `Disputa no 2º turno: <strong class="lula">Lula</strong> e <strong class="flavio">Flávio Bolsonaro</strong>`;
+                document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
             }
-            document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
         } else {
             let nomeEstado = nomesEstados[uf] || uf.toUpperCase();
             let siglaUF = uf.toUpperCase();
             let prep = preposicaoUF[uf] || 'em ';
             let localFormatado = prep + nomeEstado;
+            let siglaFormatada = prep + siglaUF;
 
-            banner.className = "state-banner-highlight";
-            bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
-            
             if (vLula > vFlavio) {
                 let pctLFormatted = pctL.toFixed(2).replace('.', ',');
-                headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctLFormatted}%`;
+                banner.className = "state-banner-highlight leader-lula";
+                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
+                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
+
+                if (pctApurado >= 100) {
+                    headline.innerHTML = `<strong class="lula">Lula</strong> venceu ${localFormatado} com ${pctLFormatted}%`;
+                } else {
+                    headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctLFormatted}%`;
+                }
             } else if (vFlavio > vLula) {
                 let pctFFormatted = pctF.toFixed(2).replace('.', ',');
-                headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctFFormatted}%`;
+                banner.className = "state-banner-highlight leader-flavio";
+                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
+                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
+
+                if (pctApurado >= 100) {
+                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> venceu ${localFormatado} com ${pctFFormatted}%`;
+                } else {
+                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctFFormatted}%`;
+                }
             } else {
+                banner.className = "state-banner-highlight";
+                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
+                bannerPill.innerText = "Indefinido";
                 headline.innerHTML = `Aguardando apuração ${localFormatado}`;
             }
 
@@ -583,8 +606,7 @@
 
         document.getElementById('secoesText').innerText = `${pctApurado.toFixed(2).replace('.', ',')}% apurado`;
 
-        // Estatísticas Complementares
-        document.getElementById('votosValidosText').innerText = parseInt(data.vvc || data.v | 0, 10).toLocaleString('pt-BR');
+        document.getElementById('votosValidosText').innerText = parseInt(data.vvc || data.v || 0, 10).toLocaleString('pt-BR');
         document.getElementById('abstencoesText').innerText = parseInt(data.a || 0, 10).toLocaleString('pt-BR');
         document.getElementById('brancosText').innerText = parseInt(data.vb || 0, 10).toLocaleString('pt-BR');
         document.getElementById('nulosText').innerText = parseInt(data.tvn || data.vn || 0, 10).toLocaleString('pt-BR');
