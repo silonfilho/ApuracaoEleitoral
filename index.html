@@ -354,28 +354,41 @@
         }
     }
 
-    // --- CONSULTA HÍBRIDA MULTI-ROTA (TSE + FALLBACK RENDER) ---
+    // --- BUSCA ULTRA-ROBUSTA VIA PROXY / DIRECTO / BACKEND ---
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         
-        // Estrutura completa de URLs da CDN do TSE
-        const urls = [
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`
-        ];
+        // Caminhos e formatos possíveis da API do TSE
+        const path1 = `ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`;
+        const path2 = `ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`;
+        const path3 = `ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`;
 
-        for (const url of urls) {
+        const paths = [path1, path2, path3];
+
+        for (const p of paths) {
+            const rawUrl = `https://resultados.tse.jus.br/oficial/${p}`;
+            
+            // Tentativa 1: Direta pelo navegador
             try {
-                const res = await fetch(url);
+                const res = await fetch(rawUrl);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data) return data;
+                    if (data && (data.cand || data.candidato || data.pst)) return data;
+                }
+            } catch (e) {}
+
+            // Tentativa 2: Através do Proxy para burlar o CORS do navegador
+            try {
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`;
+                const res = await fetch(proxyUrl);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.cand || data.candidato || data.pst)) return data;
                 }
             } catch (e) {}
         }
 
-        // Fallback: consulta o teu servidor backend no Render
+        // Tentativa 3: Fallback para o teu servidor local no Render
         try {
             const res = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
             if (res.ok) return await res.json();
