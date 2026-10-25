@@ -15,10 +15,12 @@ const UFS_VALIDAS = [
     'rn', 'rs', 'ro', 'rr', 'sc', 'sp', 'se', 'to'
 ];
 
+// Gerador de URL Oficial do TSE por UF (2º Turno 2026 - Código 6258)
 function getTseUrl(uf) {
     const ufLower = uf.toLowerCase();
-    // Garanta o padrão de 4 dígitos do código 'e0006258'
-    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`;
+    
+    // Tente este formato oficial com a pasta /dados/
+    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`;
 }
 
 // Controladores de estado e resiliência
