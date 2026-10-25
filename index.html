@@ -138,7 +138,6 @@
     </div>
 
     <script>
-    const API_PROXY_URL = '/api/tse';
     const TOTAL_ELEITORES_NACIONAL = 158745463;
 
     function normalizarTexto(txt) {
@@ -229,7 +228,7 @@
     let layersByUF = {};
     let ufHoverAtiva = null;
 
-    // Carregamento GeoJSON Local (protegido contra quedas do GitHub)
+    // Carregamento GeoJSON Local
     fetch('./brazil-states.geojson')
         .then(res => res.json())
         .then(geoData => {
@@ -340,7 +339,7 @@
     async function carregarHistoricoServidor() {
         try {
             let ufSelecionada = document.getElementById('filterUF').value;
-            const response = await fetch(`${API_PROXY_URL}/historico/${ufSelecionada}`);
+            const response = await fetch(`/api/historico/${ufSelecionada}`);
             if (response.ok) {
                 const hist = await response.json();
                 if (hist && hist.labels) {
@@ -351,19 +350,41 @@
                 }
             }
         } catch (err) {
-            console.error("Erro ao carregar histórico do servidor:", err);
+            // Falha silenciosa no histórico
         }
     }
 
+    // --- LÓGICA DE CONSULTA HÍBRIDA (NAVEGADOR + FALLBACK RENDER) ---
     async function buscarDadosTSE(uf = 'br') {
-        const url = `${API_PROXY_URL}/${uf}`;
+        const ufLower = uf.toLowerCase();
+        
+        // 1. Tenta consultar diretamente no servidor da CDN do TSE
+        const urlDirect1 = `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`;
+        const urlDirect2 = `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`;
+
         try {
-            const response = await fetch(url);
-            if (!response.ok) return null;
-            return await response.json();
+            let response = await fetch(urlDirect1);
+            if (!response.ok) {
+                response = await fetch(urlDirect2);
+            }
+            if (response.ok) {
+                return await response.json();
+            }
         } catch (err) {
-            return null;
+            // Se o navegador falhar (ex: política de CORS/rede), prossegue para o fallback
         }
+
+        // 2. Fallback: consulta a API do teu próprio backend no Render
+        try {
+            const response = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
+            if (response.ok) {
+                return await response.json();
+            }
+        } catch (err) {
+            console.error(`[Erro na busca de dados para ${ufLower}]`, err);
+        }
+
+        return null;
     }
 
     async function carregarDadosEstadosParaMapa() {
