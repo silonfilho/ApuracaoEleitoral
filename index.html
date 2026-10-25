@@ -323,33 +323,52 @@
     });
 
     // --- FUNÇÃO DE BUSCA ULTRA CORRIGIDA COM CAMINHOS OFICIAIS EXATOS ---
+    // --- BUSCA DIRETA E RESILIENTE VIA NAVEGADOR ---
     async function buscarDadosTSE(uf = 'br') {
-    const ufLower = uf.toLowerCase();
-    const ts = Date.now();
+        const ufLower = uf.toLowerCase();
+        const ts = Date.now();
 
-    // 1. Tenta via backend local do Render
-    try {
-        const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
-        if (res.ok) {
-            const data = await res.json();
-            if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
+        // URLs Oficiais do TSE
+        const urlsTSE = [
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json?cb=${ts}`
+        ];
+
+        for (const targetUrl of urlsTSE) {
+            // 1. Tenta pelo CorsProxy.io (Rápido e bypassa bloqueios de CORS/IP)
+            try {
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                const res = await fetch(proxyUrl);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
+                        return data;
+                    }
+                }
+            } catch (e) {}
+
+            // 2. Tenta pelo AllOrigins como Fallback
+            try {
+                const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+                const res = await fetch(proxyUrl2);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
+                        return data;
+                    }
+                }
+            } catch (e) {}
         }
-    } catch (e) {}
 
-    // 2. Fallback direto com a URL correta -u.json
-    const urlOficial = `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-u.json?cb=${ts}`;
-    
-    try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlOficial)}`;
-        const res = await fetch(proxyUrl);
-        if (res.ok) {
-            const data = await res.json();
-            if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
-        }
-    } catch (e) {}
+        // 3. Fallback final para o teu próprio backend no Render
+        try {
+            const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
+            if (res.ok) return await res.json();
+        } catch (e) {}
 
-    return null;
-}
+        return null;
+    }
 
     let isUpdating = false;
     let eleitoNacional = null;
