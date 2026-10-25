@@ -51,22 +51,22 @@ async function obterDadosTse(uf) {
     const ufLower = uf.toLowerCase();
     const ts = Date.now();
     
+    // URLs Oficiais do TSE para as Eleições 2026
     const urls = [
-        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`,
-        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`,
-        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json?cb=${ts}`
+        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-u.json?cb=${ts}`,
+        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`
     ];
 
     for (const url of urls) {
         try {
-            console.log(`[Backend Requisição] Tentando: ${url}`);
+            console.log(`[Backend] Consultando: ${url}`);
             const data = await fetchJsonTse(url);
             if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
-                console.log(`[Sucesso TSE] Dados validados recebidos de: ${url}`);
+                console.log(`[Backend] Sucesso na resposta do TSE!`);
                 return data;
             }
         } catch (err) {
-            console.log(`[Falha URL] ${url}: ${err.message}`);
+            console.log(`[Backend] Erro em ${url}: ${err.message}`);
         }
     }
     return null;
