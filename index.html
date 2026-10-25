@@ -148,37 +148,11 @@
         const el = document.getElementById(id);
         if (!el) return;
         
-        let valorAntigoStr = el.innerText.replace('%', '').replace(' votos', '').replace(/\./g, '').replace(',', '.');
-        let valorAntigo = parseFloat(valorAntigoStr) || 0;
-        
-        if (valorAntigo === novoValorNum) {
-            if (ehPorcentagem) {
-                el.innerHTML = `${novoValorNum.toFixed(2).replace('.', ',')}<span class="${classeSimbolo}">%</span>`;
-            } else {
-                el.innerText = novoValorNum.toLocaleString('pt-BR') + sufixoTexto;
-            }
-            return;
+        if (ehPorcentagem) {
+            el.innerHTML = `${novoValorNum.toFixed(2).replace('.', ',')}<span class="${classeSimbolo}">%</span>`;
+        } else {
+            el.innerText = Math.round(novoValorNum).toLocaleString('pt-BR') + sufixoTexto;
         }
-
-        let passos = 15;
-        let incremento = (novoValorNum - valorAntigo) / passos;
-        let atual = valorAntigo;
-        let passo = 0;
-
-        let timer = setInterval(() => {
-            passo++;
-            atual += incremento;
-            if (passo >= passos) {
-                atual = novoValorNum;
-                clearInterval(timer);
-            }
-
-            if (ehPorcentagem) {
-                el.innerHTML = `${atual.toFixed(2).replace('.', ',')}<span class="${classeSimbolo}">%</span>`;
-            } else {
-                el.innerText = Math.round(atual).toLocaleString('pt-BR') + sufixoTexto;
-            }
-        }, 30);
     }
 
     const nomesEstados = {
@@ -207,13 +181,15 @@
     });
 
     const selectUF = document.getElementById('filterUF');
-    UFs.forEach(uf => {
-        let opt = document.createElement('option');
-        let key = uf.toLowerCase();
-        opt.value = key;
-        opt.innerText = `${nomesEstados[key]} (${uf})`;
-        selectUF.appendChild(opt);
-    });
+    if (selectUF && selectUF.options.length <= 1) {
+        UFs.forEach(uf => {
+            let opt = document.createElement('option');
+            let key = uf.toLowerCase();
+            opt.value = key;
+            opt.innerText = `${nomesEstados[key]} (${uf})`;
+            selectUF.appendChild(opt);
+        });
+    }
 
     const map = L.map('mapaReal', {
         zoomControl: false,
@@ -240,7 +216,7 @@
                 map.invalidateSize();
                 map.fitBounds(geojsonLayer.getBounds(), { padding: [15, 15] });
             }, 200);
-        });
+        }).catch(e => console.log('GeoJSON não carregado:', e));
 
     function styleState(feature) {
         let uf = feature.properties.sigla.toLowerCase();
@@ -322,56 +298,55 @@
         }
     });
 
-    // --- FUNÇÃO DE BUSCA ULTRA CORRIGIDA COM CAMINHOS OFICIAIS EXATOS ---
-    // --- BUSCA DIRETA E RESILIENTE VIA NAVEGADOR ---
+    // --- FUNÇÃO ULTRA RESILIENTE PARA EXTRAIR OS DADOS DO TSE ---
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         const ts = Date.now();
 
-        // URLs Oficiais do TSE
-        const urlsTSE = [
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json?cb=${ts}`
+        // Lista de URLs prioritárias no TSE
+        const urlsDirect = [
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-u.json?_=${ts}`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?_=${ts}`
         ];
 
-        for (const targetUrl of urlsTSE) {
-            // 1. Tenta pelo CorsProxy.io (Rápido e bypassa bloqueios de CORS/IP)
+        // 1. Tenta consulta via backend Node no Render
+        try {
+            const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (validarJsonTse(data)) return data;
+            }
+        } catch (e) {}
+
+        // 2. Tenta requisições diretas com Proxies
+        for (const url of urlsDirect) {
             try {
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
                 const res = await fetch(proxyUrl);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
-                        return data;
-                    }
+                    if (validarJsonTse(data)) return data;
                 }
             } catch (e) {}
 
-            // 2. Tenta pelo AllOrigins como Fallback
             try {
-                const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-                const res = await fetch(proxyUrl2);
+                const res = await fetch(url);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
-                        return data;
-                    }
+                    if (validarJsonTse(data)) return data;
                 }
             } catch (e) {}
         }
 
-        // 3. Fallback final para o teu próprio backend no Render
-        try {
-            const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
-            if (res.ok) return await res.json();
-        } catch (e) {}
-
         return null;
     }
 
+    function validarJsonTse(data) {
+        if (!data) return false;
+        return !!(data.cand || data.candidato || data.pst || data.pstp || data.pvap);
+    }
+
     let isUpdating = false;
-    let eleitoNacional = null;
 
     async function atualizarTudo() {
         if (isUpdating) return;
@@ -380,51 +355,22 @@
         try {
             let ufSelecionada = document.getElementById('filterUF').value;
             let dadosBR = await buscarDadosTSE('br');
-            
-            if (dadosBR) {
-                verificarEleitoNacional(dadosBR);
-            }
 
             let dadosExibicao = (ufSelecionada === 'br') ? dadosBR : await buscarDadosTSE(ufSelecionada);
             if (dadosExibicao) {
                 renderizarPainel(dadosExibicao, ufSelecionada);
             }
+        } catch(err) {
+            console.error('Erro no fluxo de atualização:', err);
         } finally {
             isUpdating = false;
-        }
-    }
-
-    function verificarEleitoNacional(dataBR) {
-        if (!dataBR) return;
-
-        let pctApuradoStr = dataBR.pstp || dataBR.pst || dataBR['p-pst'] || "0,00";
-        let pctApuradoBR = parseFloat(pctApuradoStr.toString().replace(',', '.'));
-        let vLulaBR = 0, vFlavioBR = 0;
-
-        const listaCand = dataBR.cand || dataBR.candidato || [];
-
-        listaCand.forEach(c => {
-            let nomeNorm = normalizarTexto(c.nm || c.nmu || '');
-            let numCand = (c.n || c.sqcand || '').toString().trim();
-
-            if (numCand === '13' || nomeNorm.includes('lula')) {
-                vLulaBR = parseInt(c.vap || c.v || 0, 10);
-            }
-            if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
-                vFlavioBR = parseInt(c.vap || c.v || 0, 10);
-            }
-        });
-
-        if (pctApuradoBR >= 100) {
-            eleitoNacional = (vFlavioBR > vLulaBR) ? 'flavio' : 'lula';
-        } else {
-            eleitoNacional = null;
         }
     }
 
     function renderizarPainel(data, uf) {
         if (!data) return;
 
+        // Extrai % apurado flexivelmente
         let pctApuradoStr = data.pstp || data.pst || data['p-pst'] || data.psta || "0,00";
         let pctApurado = parseFloat(pctApuradoStr.toString().replace(',', '.'));
 
@@ -438,18 +384,23 @@
         }
 
         let vLula = 0, vFlavio = 0, pctL = 0, pctF = 0;
+
+        // Mapeia tanto data.cand quanto data.candidato
         const listaCand = data.cand || data.candidato || [];
 
         listaCand.forEach(c => {
-            let nomeNorm = normalizarTexto(c.nm || c.nmu || '');
-            let numCand = (c.n || c.sqcand || '').toString().trim();
+            let nomeNorm = normalizarTexto(c.nm || c.nmu || c.nmn || '');
+            let numCand = (c.n || c.sqcand || c.seq || '').toString().trim();
+
+            let votos = parseInt(c.vap || c.v || c.totalVotos || 0, 10);
+            let pct = parseFloat((c.pvap || c.pv || c.p || "0").toString().replace(',', '.'));
 
             if (numCand === '13' || nomeNorm.includes('lula')) {
-                vLula = parseInt(c.vap || c.v || 0, 10);
-                pctL = parseFloat((c.pvap || c.pv || "0").toString().replace(',', '.'));
+                vLula = votos;
+                pctL = pct;
             } else if (numCand === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) {
-                vFlavio = parseInt(c.vap || c.v || 0, 10);
-                pctF = parseFloat((c.pvap || c.pv || "0").toString().replace(',', '.'));
+                vFlavio = votos;
+                pctF = pct;
             }
         });
 
@@ -483,10 +434,16 @@
         }
 
         document.getElementById('secoesText').innerText = `${pctApurado.toFixed(2).replace('.', ',')}% apurado`;
-        document.getElementById('votosValidosText').innerText = parseInt(data.vvc || data.v || 0, 10).toLocaleString('pt-BR');
-        document.getElementById('abstencoesText').innerText = parseInt(data.a || 0, 10).toLocaleString('pt-BR');
-        document.getElementById('brancosText').innerText = parseInt(data.vb || 0, 10).toLocaleString('pt-BR');
-        document.getElementById('nulosText').innerText = parseInt(data.tvn || data.vn || 0, 10).toLocaleString('pt-BR');
+
+        let vValidos = parseInt(data.vvc || data.vv || data.v || 0, 10);
+        let vAbst = parseInt(data.a || data.abs || 0, 10);
+        let vBrancos = parseInt(data.vb || data.b || 0, 10);
+        let vNulos = parseInt(data.tvn || data.vn || data.n || 0, 10);
+
+        document.getElementById('votosValidosText').innerText = vValidos.toLocaleString('pt-BR');
+        document.getElementById('abstencoesText').innerText = vAbst.toLocaleString('pt-BR');
+        document.getElementById('brancosText').innerText = vBrancos.toLocaleString('pt-BR');
+        document.getElementById('nulosText').innerText = vNulos.toLocaleString('pt-BR');
     }
 
     function alterarUF() {
