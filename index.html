@@ -228,7 +228,6 @@
     let layersByUF = {};
     let ufHoverAtiva = null;
 
-    // Carregamento GeoJSON Local
     fetch('./brazil-states.geojson')
         .then(res => res.json())
         .then(geoData => {
@@ -274,7 +273,7 @@
                 document.getElementById('filterUF').value = uf;
                 alterarUF();
             },
-            mouseover: (e) => {
+            mouseover: () => {
                 ufHoverAtiva = uf;
                 let d = dadosEstados[uf];
                 let totalV = d ? d.vLula + d.vFlavio : 0;
@@ -291,29 +290,16 @@
                     ${infoTooltip}
                 `, { className: 'leaflet-tooltip-custom', sticky: true }).openTooltip();
 
-                let ufSelecionada = document.getElementById('filterUF').value;
-                if (ufSelecionada !== uf) {
+                if (document.getElementById('filterUF').value !== uf) {
                     layer.setStyle({ weight: 2.5, color: '#facc15' });
                 }
             },
-            mouseout: (e) => {
+            mouseout: () => {
                 ufHoverAtiva = null;
                 if (geojsonLayer) geojsonLayer.resetStyle(layer);
             }
         });
     }
-
-    window.addEventListener('resize', () => {
-        if (map && geojsonLayer) {
-            map.invalidateSize();
-        }
-    });
-
-    window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            voltarParaBrasil();
-        }
-    });
 
     const ctx = document.getElementById('trendChart').getContext('2d');
     const trendChart = new Chart(ctx, {
@@ -336,85 +322,38 @@
         }
     });
 
-    async function carregarHistoricoServidor() {
+    // --- FUNÇÃO DE BUSCA HÍBRIDA (BACKEND PRIMÁRIO + PROXIES SECUNDÁRIOS) ---
+    async function buscarDadosTSE(uf = 'br') {
+        const ufLower = uf.toLowerCase();
+        const ts = Date.now();
+
+        // 1. Tenta consulta ao backend Node.js no Render
         try {
-            let ufSelecionada = document.getElementById('filterUF').value;
-            const response = await fetch(`/api/historico/${ufSelecionada}`);
-            if (response.ok) {
-                const hist = await response.json();
-                if (hist && hist.labels) {
-                    trendChart.data.labels = hist.labels;
-                    trendChart.data.datasets[0].data = hist.lula;
-                    trendChart.data.datasets[1].data = hist.flavio;
-                    trendChart.update();
-                }
-            }
-        } catch (err) {
-            // Falha silenciosa no histórico
-        }
-    }
-
-    // --- LÓGICA DE REQUISIÇÃO DIRETA AO BACKEND DO RENDER ---
-async function buscarDadosTSE(uf = 'br') {
-    const ufLower = uf.toLowerCase();
-    
-    // 1. Tenta buscar primeiro via API interna do teu backend no Render
-    try {
-        const response = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
-        if (response.ok) {
-            const data = await response.json();
-            if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
-                return data;
-            }
-        }
-    } catch (err) {
-        console.warn(`[Render API] Falha na busca para ${ufLower}:`, err);
-    }
-
-    // 2. Fallback com parâmetro anti-cache diretamente nas URLs oficiais do TSE
-    const urls = [
-        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?_=${Date.now()}`,
-        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json?_=${Date.now()}`,
-        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?_=${Date.now()}`
-    ];
-
-    for (const url of urls) {
-        try {
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-            const res = await fetch(proxyUrl);
+            const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
             if (res.ok) {
                 const data = await res.json();
-                if (data && (data.cand || data.candidato || data.pst || data.pstp)) {
-                    return data;
-                }
+                if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
             }
         } catch (e) {}
-    }
 
-    return null;
-}
-    async function carregarDadosEstadosParaMapa() {
-        for (const uf of UFs) {
-            let key = uf.toLowerCase();
-            let dataUF = await buscarDadosTSE(key);
-            if (dataUF) {
-                let vLula = 0, vFlavio = 0;
-                const listaCand = dataUF.cand || dataUF.candidato || [];
-                listaCand.forEach(c => {
-                    let nomeNorm = normalizarTexto(c.nm || c.nmu || '');
-                    let num = (c.n || c.sqcand || '').toString().trim();
-                    if (num === '13' || nomeNorm.includes('lula')) vLula = parseInt(c.vap || c.v || 0, 10);
-                    if (num === '22' || nomeNorm.includes('flavio') || nomeNorm.includes('bolsonaro')) vFlavio = parseInt(c.vap || c.v || 0, 10);
-                });
-                let pctApuradoStr = dataUF.pst || dataUF['p-pst'] || dataUF.psta || "0,00";
-                dadosEstados[key] = {
-                    vLula: vLula,
-                    vFlavio: vFlavio,
-                    pctApurado: parseFloat(pctApuradoStr.toString().replace(',', '.'))
-                };
-            }
+        // 2. Fallbacks com Proxies
+        const targetUrls = [
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`
+        ];
+
+        for (const url of targetUrls) {
+            try {
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                const res = await fetch(proxyUrl);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
+                }
+            } catch (e) {}
         }
-        if (geojsonLayer) geojsonLayer.setStyle(styleState);
+
+        return null;
     }
 
     let isUpdating = false;
@@ -426,8 +365,8 @@ async function buscarDadosTSE(uf = 'br') {
 
         try {
             let ufSelecionada = document.getElementById('filterUF').value;
-
             let dadosBR = await buscarDadosTSE('br');
+            
             if (dadosBR) {
                 verificarEleitoNacional(dadosBR);
             }
@@ -436,8 +375,6 @@ async function buscarDadosTSE(uf = 'br') {
             if (dadosExibicao) {
                 renderizarPainel(dadosExibicao, ufSelecionada);
             }
-
-            carregarHistoricoServidor();
         } finally {
             isUpdating = false;
         }
@@ -446,7 +383,7 @@ async function buscarDadosTSE(uf = 'br') {
     function verificarEleitoNacional(dataBR) {
         if (!dataBR) return;
 
-        let pctApuradoStr = dataBR.pst || dataBR['p-pst'] || dataBR.psta || "0,00";
+        let pctApuradoStr = dataBR.pstp || dataBR.pst || dataBR['p-pst'] || "0,00";
         let pctApuradoBR = parseFloat(pctApuradoStr.toString().replace(',', '.'));
         let vLulaBR = 0, vFlavioBR = 0;
 
@@ -464,22 +401,7 @@ async function buscarDadosTSE(uf = 'br') {
             }
         });
 
-        let vvc = parseInt(dataBR.vvc || dataBR.v || 0, 10);
-        let a = parseInt(dataBR.a || 0, 10);
-        let vb = parseInt(dataBR.vb || 0, 10);
-        let tvn = parseInt(dataBR.tvn || dataBR.vn || 0, 10);
-        let totalApuradoMomento = vvc + a + vb + tvn;
-
-        if (pctApuradoBR < 80.0) {
-            eleitoNacional = null;
-            return;
-        }
-
-        let comparecimentoMaximoEstimado = Math.floor(TOTAL_ELEITORES_NACIONAL * 0.83);
-        let votosRestantesPessimista = Math.max(0, comparecimentoMaximoEstimado - totalApuradoMomento);
-        let diferencaVotosBR = Math.abs(vLulaBR - vFlavioBR);
-
-        if (pctApuradoBR >= 100 || (diferencaVotosBR > votosRestantesPessimista && totalApuradoMomento > 0)) {
+        if (pctApuradoBR >= 100) {
             eleitoNacional = (vFlavioBR > vLulaBR) ? 'flavio' : 'lula';
         } else {
             eleitoNacional = null;
@@ -489,7 +411,6 @@ async function buscarDadosTSE(uf = 'br') {
     function renderizarPainel(data, uf) {
         if (!data) return;
 
-        // Leitura flexível do percentual de seções apuradas
         let pctApuradoStr = data.pstp || data.pst || data['p-pst'] || data.psta || "0,00";
         let pctApurado = parseFloat(pctApuradoStr.toString().replace(',', '.'));
 
@@ -503,7 +424,6 @@ async function buscarDadosTSE(uf = 'br') {
         }
 
         let vLula = 0, vFlavio = 0, pctL = 0, pctF = 0;
-
         const listaCand = data.cand || data.candidato || [];
 
         listaCand.forEach(c => {
@@ -527,95 +447,30 @@ async function buscarDadosTSE(uf = 'br') {
         animarElemento('flavioVotes', vFlavio, false, '', ' votos');
         document.getElementById('flavioBar').style.width = pctF + '%';
 
-        const cardLula = document.getElementById('cardLula');
-        const cardFlavio = document.getElementById('cardFlavio');
         const headline = document.getElementById('headlineText');
-        const banner = document.getElementById('stateHighlightBanner');
-        const bannerLabel = document.getElementById('regionTitleLabel');
-        const bannerPill = document.getElementById('stateStatusPill');
-
-        const novoLider = vLula >= vFlavio ? 'lula' : 'flavio';
-
-        if (novoLider === 'lula') {
-            cardLula.className = "duel-card order-first";
-            cardFlavio.className = "duel-card order-second";
-        } else {
-            cardFlavio.className = "duel-card order-first";
-            cardLula.className = "duel-card order-second";
-        }
-
-        if (eleitoNacional === 'lula') {
-            cardLula.classList.add('eleito');
-            cardFlavio.classList.remove('eleito');
-        } else if (eleitoNacional === 'flavio') {
-            cardFlavio.classList.add('eleito');
-            cardLula.classList.remove('eleito');
-        } else {
-            cardLula.classList.remove('eleito');
-            cardFlavio.classList.remove('eleito');
-        }
-
         let diferencaVotos = Math.abs(vLula - vFlavio);
 
         if (uf === 'br') {
-            banner.className = "state-banner-highlight";
-            bannerLabel.innerText = "PRESIDENTE · BRASIL";
-            bannerPill.innerText = "2º Turno";
-
-            if (eleitoNacional === 'lula') {
-                headline.innerHTML = `<span class="winner">Lula</span> eleito Presidente da República`;
-                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
-            } else if (eleitoNacional === 'flavio') {
-                headline.innerHTML = `<span class="winner">Flávio Bolsonaro</span> eleito Presidente da República`;
-                document.getElementById('diffText').innerText = `Resultado Matematicamente Definido`;
-            } else if (vLula === 0 && vFlavio === 0) {
+            if (vLula === 0 && vFlavio === 0) {
                 headline.innerHTML = `Processando apuração oficial...`;
-                document.getElementById('diffText').innerText = `Diferença: 0 votos`;
             } else {
                 headline.innerHTML = `Disputa no 2º turno: <strong class="lula">Lula</strong> e <strong class="flavio">Flávio Bolsonaro</strong>`;
-                document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
             }
+            document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
         } else {
             let nomeEstado = nomesEstados[uf] || uf.toUpperCase();
-            let siglaUF = uf.toUpperCase();
             let prep = preposicaoUF[uf] || 'em ';
             let localFormatado = prep + nomeEstado;
-            let siglaFormatada = prep + siglaUF;
 
             if (vLula > vFlavio) {
-                let pctLFormatted = pctL.toFixed(2).replace('.', ',');
-                banner.className = "state-banner-highlight leader-lula";
-                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
-                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
-
-                if (pctApurado >= 100) {
-                    headline.innerHTML = `<strong class="lula">Lula</strong> venceu ${localFormatado} com ${pctLFormatted}%`;
-                } else {
-                    headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctLFormatted}%`;
-                }
+                headline.innerHTML = `<strong class="lula">Lula</strong> lidera ${localFormatado} com ${pctL.toFixed(2).replace('.', ',')}%`;
             } else if (vFlavio > vLula) {
-                let pctFFormatted = pctF.toFixed(2).replace('.', ',');
-                banner.className = "state-banner-highlight leader-flavio";
-                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
-                bannerPill.innerText = pctApurado >= 100 ? "Vencedor " + siglaFormatada : "Liderando " + siglaFormatada;
-
-                if (pctApurado >= 100) {
-                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> venceu ${localFormatado} com ${pctFFormatted}%`;
-                } else {
-                    headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctFFormatted}%`;
-                }
-            } else {
-                banner.className = "state-banner-highlight";
-                bannerLabel.innerText = `${nomeEstado.toUpperCase()} (${siglaUF})`;
-                bannerPill.innerText = "Indefinido";
-                headline.innerHTML = `Aguardando apuração ${localFormatado}`;
+                headline.innerHTML = `<strong class="flavio">Flávio Bolsonaro</strong> lidera ${localFormatado} com ${pctF.toFixed(2).replace('.', ',')}%`;
             }
-
             document.getElementById('diffText').innerText = `Diferença: ${diferencaVotos.toLocaleString('pt-BR')} votos`;
         }
 
         document.getElementById('secoesText').innerText = `${pctApurado.toFixed(2).replace('.', ',')}% apurado`;
-
         document.getElementById('votosValidosText').innerText = parseInt(data.vvc || data.v || 0, 10).toLocaleString('pt-BR');
         document.getElementById('abstencoesText').innerText = parseInt(data.a || 0, 10).toLocaleString('pt-BR');
         document.getElementById('brancosText').innerText = parseInt(data.vb || 0, 10).toLocaleString('pt-BR');
@@ -624,18 +479,8 @@ async function buscarDadosTSE(uf = 'br') {
 
     function alterarUF() {
         let ufSelected = document.getElementById('filterUF').value;
-        
-        const btnReset = document.getElementById('btnResetMap');
-        btnReset.style.display = (ufSelected === 'br') ? 'none' : 'inline-block';
-
+        document.getElementById('btnResetMap').style.display = (ufSelected === 'br') ? 'none' : 'inline-block';
         if (geojsonLayer) geojsonLayer.setStyle(styleState);
-
-        if (ufSelected !== 'br' && layersByUF[ufSelected]) {
-            map.fitBounds(layersByUF[ufSelected].getBounds(), { padding: [20, 20] });
-        } else if (geojsonLayer) {
-            map.fitBounds(geojsonLayer.getBounds(), { padding: [15, 15] });
-        }
-
         atualizarTudo();
     }
 
@@ -645,10 +490,7 @@ async function buscarDadosTSE(uf = 'br') {
     }
 
     setInterval(atualizarTudo, 5000);
-    setInterval(carregarDadosEstadosParaMapa, 15000);
-
     atualizarTudo();
-    carregarDadosEstadosParaMapa();
 </script>
 </body>
 </html>
