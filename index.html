@@ -358,39 +358,36 @@
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         
-        // Lista de caminhos da API do TSE do mais rápido ao mais simplificado
+        // Caminhos oficiais ordenados por velocidade de atualização no TSE
         const urls = [
             `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json`,
             `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-v.json`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`,
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`
         ];
 
         for (const url of urls) {
+            // 1. Tenta via Proxy para ultrapassar limitações de CORS no navegador
             try {
-                // 1. Tenta via Proxy para contornar bloqueio de CORS no navegador
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}&_=${Date.now()}`;
                 const res = await fetch(proxyUrl);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data && (data.pst || data.pstp || data.cand || data.candidato)) {
-                        return data;
-                    }
+                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
                 }
             } catch (e) {}
 
+            // 2. Tenta requisição direta
             try {
-                // 2. Tenta requisição direta
-                const res = await fetch(url);
+                const res = await fetch(`${url}?_=${Date.now()}`);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data && (data.pst || data.pstp || data.cand || data.candidato)) {
-                        return data;
-                    }
+                    if (data && (data.cand || data.candidato || data.pst || data.pstp)) return data;
                 }
             } catch (e) {}
         }
 
-        // 3. Fallback: Servidor Backend no Render
+        // 3. Fallback para o teu servidor local no Render
         try {
             const res = await fetch(`/api/dados/${ufLower.toUpperCase()}`);
             if (res.ok) return await res.json();
@@ -495,7 +492,8 @@
     function renderizarPainel(data, uf) {
         if (!data) return;
 
-        let pctApuradoStr = data.pst || data['p-pst'] || data.psta || "0,00";
+        // Leitura flexível do percentual de seções apuradas
+        let pctApuradoStr = data.pstp || data.pst || data['p-pst'] || data.psta || "0,00";
         let pctApurado = parseFloat(pctApuradoStr.toString().replace(',', '.'));
 
         document.getElementById('globalPctText').innerText = pctApuradoStr + '%';
