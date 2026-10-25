@@ -7,7 +7,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Servir ficheiros estáticos a partir da raiz do projeto (onde está o index.html)
+app.use(express.static(path.join(__dirname)));
 
 // Estado e Cache dos Dados da Eleição
 let cacheEleicao = {
@@ -146,9 +148,9 @@ app.get('/api/dados/:uf', (req, res) => {
     return res.status(404).json({ error: `Dados para a UF ${ufParam} ainda não disponíveis em cache` });
 });
 
-// Rota genérica para servir a SPA (100% compatível com Express v5 / path-to-regexp v8)
+// Servir o index.html localizado na raiz do projeto
 app.use((req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
