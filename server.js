@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fetch = require('node-fetch'); // Ou usa fetch nativo se Node >= 18
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -9,6 +8,9 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.static(path.join(__dirname)));
 
+/**
+ * Consulta a CDN do TSE utilizando o fetch nativo do Node.js
+ */
 async function buscarComProxy(url) {
     const proxies = [
         `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -17,17 +19,17 @@ async function buscarComProxy(url) {
 
     for (const proxyUrl of proxies) {
         try {
-            console.log(`[Backend Proxy] Tentando buscar via: ${proxyUrl}`);
-            const res = await fetch(proxyUrl, { timeout: 5000 });
+            console.log(`[Backend Proxy] A tentar: ${proxyUrl}`);
+            const res = await fetch(proxyUrl);
             if (res.ok) {
                 const data = await res.json();
                 if (data && (data.cand || data.candidato || data.pst || data.pstp || data.cagr)) {
-                    console.log(`[Backend Proxy] Sucesso ao obter dados!`);
+                    console.log(`[Backend Proxy] Sucesso ao obter dados do TSE!`);
                     return data;
                 }
             }
         } catch (e) {
-            console.log(`[Backend Proxy] Falha no proxy: ${e.message}`);
+            console.log(`[Backend Proxy] Erro no proxy: ${e.message}`);
         }
     }
     return null;
@@ -50,7 +52,7 @@ app.get('/api/dados/:uf', async (req, res) => {
         }
     }
 
-    res.status(404).json({ error: 'Não foi possível obter os dados do TSE neste momento.' });
+    res.status(404).json({ error: 'Aguardando publicação do TSE' });
 });
 
 app.use((req, res) => {
