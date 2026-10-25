@@ -125,13 +125,16 @@ setInterval(() => {
     atualizarDadosUF('br');
 }, 3000);
 
-// 2. Atualização automática dos 27 estados a cada 15 segundos em background
-UFS_VALIDAS.forEach(uf => {
-    if (uf !== 'br') {
+// 2. Atualização dos 27 estados com STAGGERING (Descompasso de 500ms entre cada estado)
+// Isso distribui as requisições uniformemente ao longo dos 15s sem picos de CPU/Rede
+const estadosApenas = UFS_VALIDAS.filter(uf => uf !== 'br');
+estadosApenas.forEach((uf, index) => {
+    setTimeout(() => {
+        atualizarDadosUF(uf); // Primeira chamada descompassada
         setInterval(() => {
             atualizarDadosUF(uf);
-        }, 15000);
-    }
+        }, 15000); // Repete a cada 15s a partir daquele ponto
+    }, index * 500);
 });
 
 // Endpoint de Health Check
@@ -156,7 +159,7 @@ app.get('/api/tse/historico/:uf', (req, res) => {
     res.json(historicoGraficoUF[uf]);
 });
 
-// Endpoint dinâmico ultra-rápido: Apenas entrega o cache sem fazer requisição de rede imediata
+// Endpoint dinâmico ultra-rápido: Apenas entrega o cache da memória
 app.get('/api/tse/:uf', (req, res) => {
     const uf = req.params.uf.toLowerCase();
 
@@ -168,7 +171,6 @@ app.get('/api/tse/:uf', (req, res) => {
         return res.status(400).json({ error: "UF informada é inválida." });
     }
 
-    // Resposta instantânea da memória
     res.json(cacheDadosUF[uf]);
 });
 
