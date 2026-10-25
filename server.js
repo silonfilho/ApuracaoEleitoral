@@ -15,10 +15,10 @@ const UFS_VALIDAS = [
     'rn', 'rs', 'ro', 'rr', 'sc', 'sp', 'se', 'to'
 ];
 
-// Gerador de URL Oficial do TSE por UF
 function getTseUrl(uf) {
     const ufLower = uf.toLowerCase();
-    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json`;
+    // Garanta o padrão de 4 dígitos do código 'e0006258'
+    return `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e0006258-r.json`;
 }
 
 // Controladores de estado e resiliência
