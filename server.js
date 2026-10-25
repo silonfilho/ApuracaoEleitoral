@@ -146,8 +146,8 @@ app.get('/api/dados/:uf', (req, res) => {
     return res.status(404).json({ error: `Dados para a UF ${ufParam} ainda não disponíveis em cache` });
 });
 
-// Rota genérica para servir a SPA (Sintaxe compatível com Express v5+)
-app.get('(.*)', (req, res) => {
+// Rota genérica para servir a SPA (100% compatível com Express v5 / path-to-regexp v8)
+app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
