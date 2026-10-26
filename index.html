@@ -298,37 +298,20 @@
         }
     });
 
-    // --- FUNÇÃO ULTRA RESILIENTE PARA EXTRAIR OS DADOS DO TSE ---
     async function buscarDadosTSE(uf = 'br') {
         const ufLower = uf.toLowerCase();
         const ts = Date.now();
 
-        // Endpoints Oficiais com a nomenclatura exata do TSE
-        const targetUrls = [
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-c0001-e006258-u.json?cb=${ts}`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados-simplificados/${ufLower}/${ufLower}-c0001-e006258-r.json?cb=${ts}`,
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${ufLower}/${ufLower}-e006258-ab.json?cb=${ts}`
-        ];
-
-        // 1. Tenta consulta pela API do teu próprio Backend no Render
         try {
             const res = await fetch(`/api/dados/${ufLower.toUpperCase()}?cb=${ts}`);
             if (res.ok) {
                 const data = await res.json();
-                if (validarJsonTse(data)) return data;
-            }
-        } catch (e) {}
-
-        // 2. Tenta os endpoints com o proxy AllOrigins
-        for (const url of targetUrls) {
-            try {
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                const res = await fetch(proxyUrl);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (validarJsonTse(data)) return data;
+                if (data && (data.cand || data.candidato || data.pst || data.pstp || data.cagr)) {
+                    return data;
                 }
-            } catch (e) {}
+            }
+        } catch (e) {
+            console.error('Erro na chamada da API local:', e);
         }
 
         return null;
